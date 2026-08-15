@@ -1,0 +1,46 @@
+name: test
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+
+      - name: 跑测试
+        run: npm test
+
+      # **换一个时区再跑一遍。**
+      #
+      # 这里出的都是日期：Letterboxd 的 `WatchedDate`、Goodreads 的 `Date Read`。
+      # 豆瓣的时间在 canonical 里是带 +08:00 的字符串，照理跟本机时区无关——
+      # 但「照理无关」正是解析器仓库里那条 bug 的原话，那次本地全绿、CI 全红，
+      # 而 CI 恰好在 UTC 只是运气好。用 UTC+14 是因为它跟常见时区差到**日期本身都不同**。
+      - name: 换个时区再跑一遍
+        env:
+          TZ: Pacific/Kiritimati
+        run: npm test
+
+      # zip 的判据是「别人的实现认不认」，靠系统的 unzip。这台机器上没有 unzip
+      # 的话那条测试会跳过——**跳过在 CI 里等于没测**，所以显式确认它在。
+      - name: 确认 unzip 在，那条测试不是跳过的
+        run: |
+          command -v unzip >/dev/null || {
+            echo '::error::没有 unzip，zip 的外部校验会静默跳过'; exit 1; }
+          npm test 2>&1 | grep -E '^ℹ (tests|pass|fail|skipped)'
+
+      # 端到端跑一次：产出必须真的落到磁盘上，而且 zip 要能用系统工具打开。
+      # 单测都是在内存里比字符串的，落盘这一段没有别的地方覆盖。
+      - name: 对着样本档案跑一次完整导出
+        run: |
+          node bin/export.js test/fixtures/canonical /tmp/export-out
+          unzip -t /tmp/export-out/neodb/neodb-import.zip
+          ls -R /tmp/export-out
+          test -f /tmp/export-out/怎么导入.md
