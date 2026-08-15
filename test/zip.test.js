@@ -4,26 +4,7 @@ import { execFileSync } from 'node:child_process';
 import { writeFileSync, mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { inflateRawSync } from 'node:zlib';
-import { zip } from '../src/zip.js';
-
-/** 把 zip 拆回来。只认这个写出器会产出的那两种压缩方式。 */
-function unzip(buf) {
-  const out = new Map();
-  let at = 0;
-  while (buf.readUInt32LE(at) === 0x04034b50) {
-    const method = buf.readUInt16LE(at + 8);
-    const compressed = buf.readUInt32LE(at + 18);
-    const nameLen = buf.readUInt16LE(at + 26);
-    const extraLen = buf.readUInt16LE(at + 28);
-    const name = buf.subarray(at + 30, at + 30 + nameLen).toString('utf8');
-    const start = at + 30 + nameLen + extraLen;
-    const body = buf.subarray(start, start + compressed);
-    out.set(name, (method === 8 ? inflateRawSync(body) : body).toString('utf8'));
-    at = start + compressed;
-  }
-  return out;
-}
+import { zip, unzip } from '../src/zip.js';
 
 test('自己拆得开，内容一字不差', () => {
   const files = [

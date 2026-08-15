@@ -2,10 +2,13 @@
 /**
  * canonical → NeoDB / Letterboxd / Goodreads 的导入文件。**不联网。**
  *
- *   node bin/export.js <canonical 目录> [输出目录] [--target=neodb,letterboxd,goodreads]
+ *   node bin/export.js <canonical 目录> [输出目录] [--target=…] [--sample=N]
  *
- * 三个目标平台没有一个能收下整份档案，所以这个命令的产出里，
+ * 三个平台没有一个能收下整份档案，所以这个命令的产出里，
  * 「导不出去的是什么、有多少」跟「导出去的是什么」一样是正式产出。
+ *
+ * `--sample=N` 先切一小份。三个平台的导入都不好撤，而「格式对不对」只有真导
+ * 一次才知道——手工验证的步骤见 `docs/manual-testing.md`。
  */
 
 import { writeFileSync, mkdirSync } from 'node:fs';
@@ -15,6 +18,7 @@ import { buildNeodb } from '../src/targets/neodb.js';
 import { buildLetterboxd } from '../src/targets/letterboxd.js';
 import { buildGoodreads } from '../src/targets/goodreads.js';
 import { instructions } from '../src/instructions.js';
+import { sample } from '../src/sample.js';
 import { zip } from '../src/zip.js';
 
 const TARGETS = ['neodb', 'letterboxd', 'goodreads'];
@@ -24,9 +28,22 @@ const flags = args.filter((a) => a.startsWith('--'));
 const [inDir, outDir = 'export-out'] = args.filter((a) => !a.startsWith('--'));
 
 if (!inDir) {
-  console.error('用法: node bin/export.js <canonical 目录> [输出目录] [--target=neodb,letterboxd,goodreads]');
+  console.error('用法: node bin/export.js <canonical 目录> [输出目录] [--target=…] [--sample=N]');
+  console.error('  --target=  neodb,letterboxd,goodreads 里挑，默认三个都出');
+  console.error('  --sample=N 只切 N 条标记出来先试（按分类和状态轮着取，见 docs/manual-testing.md）');
   process.exit(2);
 }
+
+const sampleSize = (() => {
+  const f = flags.find((a) => a.startsWith('--sample='));
+  if (!f) return null;
+  const v = Number(f.slice('--sample='.length));
+  if (!Number.isInteger(v) || v < 1) {
+    console.error(`--sample 要一个正整数，收到 ${f.slice('--sample='.length)}`);
+    process.exit(2);
+  }
+  return v;
+})();
 
 const wanted = (() => {
   const f = flags.find((a) => a.startsWith('--target='));
@@ -40,14 +57,21 @@ const wanted = (() => {
   return picked;
 })();
 
-const data = loadCanonical(inDir);
+const whole = loadCanonical(inDir);
+const data = sampleSize === null ? whole : sample(whole, sampleSize);
 mkdirSync(outDir, { recursive: true });
 
 const n = (x) => String(x);
 const say = (...s) => console.log(...s);
 
-say(`读到 标记 ${n(data.marks.length)} 条 · 作品 ${n(data.subjects.length)} 个 · `
-  + `长文 ${n(data.longform.length)} 篇 · 豆列 ${n(data.doulists.length)} 份`);
+say(`读到 标记 ${n(whole.marks.length)} 条 · 作品 ${n(whole.subjects.length)} 个 · `
+  + `长文 ${n(whole.longform.length)} 篇 · 豆列 ${n(whole.doulists.length)} 份`);
+if (sampleSize !== null) {
+  // **小样是一份小样，不是一次导出。** 把它当全量传上去，用户会以为自己搬完了，
+  // 而剩下的 2900 多条永远不会有人再想起来。
+  say(`⚠ 小样模式：只切了 ${n(data.marks.length)} 条标记（长文和豆列没削）。`);
+  say('  这不是完整导出。验完之后去掉 --sample 再跑一次，导到另一个目录。');
+}
 say('');
 
 /** 写一组文件到子目录，返回写了几个。 */

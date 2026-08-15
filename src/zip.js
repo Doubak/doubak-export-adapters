@@ -16,7 +16,7 @@
  * 带上真实时间的话，「这次导出跟上次有什么不一样」就永远答不了，因为**每次都不一样**。
  */
 
-import { deflateRawSync } from 'node:zlib';
+import { deflateRawSync, inflateRawSync } from 'node:zlib';
 
 const CRC_TABLE = (() => {
   const t = new Int32Array(256);
@@ -101,4 +101,32 @@ export function zip(files) {
   end.writeUInt32LE(offset, 16);
 
   return Buffer.concat([...locals, dir, end]);
+}
+
+/**
+ * 把 zip 拆回来。**只认这个写出器会写出的那两种压缩方式**，不是一个通用解压器。
+ *
+ * 它存在是为了「上传之前先看看里面到底是什么」——`tools/check-export.mjs` 用它，
+ * 测试也用它。写出器和读回器同源确实证明不了太多，所以真正的判据在测试里：
+ * 系统的 `unzip -t` 认不认。
+ *
+ * @param {Buffer} buf
+ * @returns {Map<string, string>} 文件名 → 内容
+ */
+export function unzip(buf) {
+  const out = new Map();
+  let at = 0;
+  while (at + 30 <= buf.length && buf.readUInt32LE(at) === 0x04034b50) {
+    const method = buf.readUInt16LE(at + 8);
+    const compressed = buf.readUInt32LE(at + 18);
+    const nameLen = buf.readUInt16LE(at + 26);
+    const extraLen = buf.readUInt16LE(at + 28);
+    const name = buf.subarray(at + 30, at + 30 + nameLen).toString('utf8');
+    const start = at + 30 + nameLen + extraLen;
+    const body = buf.subarray(start, start + compressed);
+    if (method !== 0 && method !== 8) throw new Error(`${name} 用了不认识的压缩方式 ${method}`);
+    out.set(name, (method === 8 ? inflateRawSync(body) : body).toString('utf8'));
+    at = start + compressed;
+  }
+  return out;
 }

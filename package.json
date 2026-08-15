@@ -12,7 +12,8 @@
     "doubak-export": "./bin/export.js"
   },
   "scripts": {
-    "test": "node --test \"test/**/*.test.js\""
+    "test": "node --test \"test/**/*.test.js\"",
+    "check": "node tools/check-export.mjs"
   },
   "dependencies": {},
   "devDependencies": {}

@@ -44,3 +44,27 @@ jobs:
           unzip -t /tmp/export-out/neodb/neodb-import.zip
           ls -R /tmp/export-out
           test -f /tmp/export-out/怎么导入.md
+
+      # 校验器是「上传之前跑一次」的那一步，而它自己坏掉的表现是**说全对**。
+      # 所以这里既跑它的正路，也确认它在被改坏的产物上真的会失败——
+      # 一个永远返回 0 的校验器比没有校验器更糟。
+      - name: 校验器在好的产物上通过
+        run: node tools/check-export.mjs test/fixtures/canonical /tmp/export-out
+
+      - name: 校验器在坏的产物上必须失败
+        run: |
+          cp -r /tmp/export-out /tmp/export-bad
+          sed -i 's/,\([1-5]\),\([0-9]\{4\}-\)/,9,\2/' /tmp/export-bad/letterboxd/letterboxd-watched.csv
+          if node tools/check-export.mjs test/fixtures/canonical /tmp/export-bad; then
+            echo '::error::产物被改坏了，校验器却说没问题'; exit 1
+          fi
+
+      # 小样带 --sample 该过，不带该失败——「产物比档案少」正是漏导的症状，
+      # 默认就放行等于把最该报的那个警报关掉。
+      - name: 小样模式
+        run: |
+          node bin/export.js test/fixtures/canonical /tmp/export-sample --sample=6
+          node tools/check-export.mjs test/fixtures/canonical /tmp/export-sample --sample
+          if node tools/check-export.mjs test/fixtures/canonical /tmp/export-sample; then
+            echo '::error::小样只有 6 条，不带 --sample 时校验器该报「行数对不上」'; exit 1
+          fi

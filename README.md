@@ -5,8 +5,9 @@
 豆备 (Doubak) 的对外导出适配器。把 [解析器](https://github.com/Doubak/doubak-data-parser) 产出的 **canonical** 转成 **NeoDB / Letterboxd / Goodreads** 的导入文件。
 
 ```sh
-node bin/export.js <canonical 目录> [输出目录] [--target=neodb,letterboxd,goodreads]
-npm test    # node --test，零依赖，不需要 npm install（71 个测试）
+node bin/export.js <canonical 目录> [输出目录] [--target=…] [--sample=N]
+node tools/check-export.mjs <canonical 目录> <导出目录>   # 上传前离线自查
+npm test    # node --test，零依赖，不需要 npm install（85 个测试）
 ```
 
 需要 Node ≥ 20。**不联网**——产出是几个文件，什么时候上传、上不上传，都不影响档案。
@@ -16,6 +17,8 @@ node bin/export.js ~/downloads/20260806-canonical ~/downloads/20260806-export
 ```
 
 产出目录里除了几个 CSV 和一个 zip，还有一份 `怎么导入.md`，写着这一次的真实条数和每个平台的上传入口。
+
+**第一次导之前请看 [`docs/manual-testing.md`](docs/manual-testing.md)。** 三个平台的导入都不好撤，所以流程是「`--sample=20` 切一小份 → 离线自查 → 真传一次看那 20 条 → 再导全量」。`--sample` 按 (分类, 状态) 轮着取，保证每一种组合都至少来一条——取前 N 条会拿到一堆同类的，验不了跨类的任何东西。
 
 ## 三个平台不是一回事
 
@@ -120,7 +123,7 @@ canonical 里一条标记记的是**一串观测**：哪个版本的解析器、
 ## 还没做的
 
 - **豆列 → NeoDB 的收藏单。** CSV 导入里没有这一档，Collection 只存在于 NeoDB 自己的 NDJSON 归档格式里，而那个格式要两遍扫描、要先解析出条目表，是它的内部实现细节。照着猜一个出来不如明说没做。同一个格式里的 `ShelfLog`（状态变更历史）是三个平台里唯一跟 canonical 的事件日志对得上的东西，值得再看。
-- **没有一次真实的往返验证。** 这里能证明产出符合读源码读出来的格式，**不能证明三个平台真的收**。在有人拿一小批（比如 20 条）实际导进去之前，诚实的说法是「符合已记录的格式」，不是「能用」。
+- **没有一次真实的往返验证。** 这里能证明产出符合读源码读出来的格式，**不能证明三个平台真的收**。在有人拿一小批实际导进去之前，诚实的说法是「符合已记录的格式」，不是「能用」。做这件事的步骤写在 [`docs/manual-testing.md`](docs/manual-testing.md) 里，`--sample=20` 就是为它加的。
 - Letterboxd 的 `Rewatch` 列没写——豆瓣不记重看。
 - Goodreads 的 `Binding` 没写：豆瓣写「平装 / 精装」，Goodreads 要 `Paperback / Hardcover`，翻译得出来，但 ISBN 已经把版本钉死了，这一列只会在冲突时添乱。
 
