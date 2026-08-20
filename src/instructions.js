@@ -32,6 +32,12 @@ export function instructions(r) {
       L.push('也在生成的站点里。');
       L.push('');
     }
+    if (r.neodb.noLink) {
+      L.push(`⚠ **${r.neodb.noLink} 条没有放进 zip**：这些作品豆瓣已经删掉了，`);
+      L.push('档案里连链接都没有，NeoDB 无从定位。它们列在 `neodb/neodb-needs-check.csv` 里，');
+      L.push('那个文件**不要上传**——放进去只会固定报几个失败，把真出问题的那条盖住。');
+      L.push('');
+    }
     if (r.neodb.unattachedLongform) {
       L.push(`⚠ **${r.neodb.unattachedLongform} 篇日记没有导出**，因为它们不挂在任何作品上，`);
       L.push('而 NeoDB 的笔记必须挂一个条目。');

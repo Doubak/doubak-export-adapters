@@ -99,5 +99,5 @@ test('小样：带 --sample 该过，不带该失败', () => {
 
   const { code, out } = check(dir);
   assert.equal(code, 1);
-  assert.match(out, /行，档案里有/);
+  assert.match(out, /标记 \d+ 行，该有 \d+ 条/);
 });

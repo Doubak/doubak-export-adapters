@@ -117,6 +117,10 @@ node tools/check-export.mjs ~/downloads/20260806-canonical /tmp/export-sample --
 - [ ] **日期**：标记时间是豆瓣上那天，不是今天。
 - [ ] **书评**：`game_review.csv` 那两篇进去了，而且**有标题**。标题空了就是重复表头那一处理解错了。
 
+**`neodb-needs-check.csv` 不要上传。** 它跟 zip 放在同一个目录里，但它是给人看的：里面是豆瓣已经删掉、档案里连链接都没留下的条目，NeoDB 无从定位。
+
+导入完成后 NeoDB 会给一行结果，形如 `41 items imported, 0 skipped, 1 failed`。**`failed` 应当是 0。** 实测 2026-08-20 第一次真实导入 42 条时报了 1 个 `Could not find item: `（冒号后面是空的），原因正是上面那条没有链接的记录——现在它已经不进 zip 了，所以再遇到非 0 的 `failed`，那就是真出了问题，请开 issue。
+
 不满意就把这 20 条删掉重来——**这正是先传 20 条的意义**。
 
 ### Letterboxd

@@ -83,7 +83,9 @@ function infoColumn(ids) {
 
 /**
  * @param {ReturnType<import('../canonical.js').loadCanonical>} data
- * @returns {{files: {name: string, text: string}[], report: object}}
+ * @returns {{files: {name: string, text: string}[],
+ *            sidecars: {name: string, text: string}[], report: object}}
+ *   `files` 进 zip，`sidecars` 写在 zip 旁边——后者是给人看的，不会被导入。
  */
 export function buildNeodb(data) {
   /** @type {Map<string, {marks: unknown[][], reviews: unknown[][], notes: unknown[][]}>} */
@@ -92,6 +94,9 @@ export function buildNeodb(data) {
     if (!buckets.has(category)) buckets.set(category, { marks: [], reviews: [], notes: [] });
     return buckets.get(category);
   };
+
+  /** 一条链接都没有的那些。写在 zip 外面——它们不该被导入，只该被看见。 */
+  const noLink = [];
 
   const report = {
     marks: 0,
@@ -119,7 +124,28 @@ export function buildNeodb(data) {
     const url = mark.subject?.url ?? subject?.url ?? null;
     if (url) links.push(url);
     if (ids.imdb) links.push(`https://www.imdb.com/title/${ids.imdb}/`);
-    if (links.length === 0) report.noLink += 1;
+
+    // 一条链接都没有 = 作品在豆瓣被删掉，canonical 里连 URL 都没留下。
+    // 这一行**注定失败**：NeoDB 是靠 links 定位条目的，没有链接它无从找起。
+    //
+    // 一次真实导入印证了这一点：42 条里 41 成功、1 失败，
+    // 报的是 `Could not find item: `（冒号后面是空的）——正是这一条。
+    //
+    // 所以不再把它塞进 zip。**一条永远会失败的记录，代价不是那一行本身，
+    // 是它教会用户忽略失败清单**：全量导入会因此固定报 7 个失败，
+    // 真出了别的问题也会混在里面看不见。
+    //
+    // 它没有被丢掉——写进 zip 外面的 `neodb-needs-check.csv`，
+    // 那是给人看的，不会被导入。
+    if (links.length === 0) {
+      report.noLink += 1;
+      // 用作品 id，不是 mark 的 upstream_id：前者能直接对上你自己站点里的
+      // `<medium>/<id>.html`，后者对游戏碰巧相同、对别的 medium 是标记 id，
+      // 拿它什么也查不到。
+      noLink.push([mark.medium, mark.subject?.id ?? '', sf?.title ?? '（档案里也没有标题）',
+        SHELF[f.status] ?? '', '条目已被豆瓣删除，canonical 里没有链接，NeoDB 无从定位']);
+      continue;
+    }
 
     const tags = f.tags ?? [];
     if (tags.some((t) => t.includes('|'))) report.tagsWithPipe += 1;
@@ -173,6 +199,13 @@ export function buildNeodb(data) {
   // 文件名就是分类，NeoDB 是按文件名分桶的。空的那一档不写文件——
   // 一个 0 行的 `podcast_mark.csv` 只会让人以为漏抓了播客。
   const files = [];
+  const sidecars = [];
+  if (noLink.length) {
+    sidecars.push({
+      name: 'neodb-needs-check.csv',
+      text: csv(['medium', 'subject_id', 'title', 'status', 'why'], noLink),
+    });
+  }
   for (const [category, b] of [...buckets].sort()) {
     report.byCategory[category] = { marks: b.marks.length, reviews: b.reviews.length, notes: b.notes.length };
     if (b.marks.length) files.push({ name: `${category}_mark.csv`, text: csv(MARK_HEADER, b.marks) });
@@ -180,5 +213,5 @@ export function buildNeodb(data) {
     if (b.notes.length) files.push({ name: `${category}_note.csv`, text: csv(NOTE_HEADER, b.notes) });
   }
 
-  return { files, report };
+  return { files, sidecars, report };
 }

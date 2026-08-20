@@ -5,7 +5,7 @@ import { buildNeodb } from '../src/targets/neodb.js';
 import { FIXTURE, parseCsv, parseCsvObjects, fileNamed } from './helpers.js';
 
 const data = loadCanonical(FIXTURE);
-const { files, report } = buildNeodb(data);
+const { files, sidecars, report } = buildNeodb(data);
 const rowsOf = (name) => parseCsvObjects(fileNamed(files, name).text);
 
 test('文件名就是 NeoDB 的七个分类之一，别的名字它根本不读', () => {
@@ -98,13 +98,6 @@ test('豆瓣五种 medium 的 URL，NeoDB 的五个站点规则都认', () => {
   assert.ok(checked >= 20, `只核了 ${checked} 条链接，样本太小`);
 });
 
-test('条目被豆瓣删掉、连 URL 都没有的，数出来', () => {
-  // NeoDB 匹配不上它——不是 bug，是那条数据本身只剩档案里有了。
-  assert.equal(report.noLink, 1);
-  const all = files.filter((f) => f.name.endsWith('_mark.csv')).flatMap((f) => parseCsvObjects(f.text));
-  assert.equal(all.filter((r) => r.links === '').length, 1);
-});
-
 test('不挂作品的日记没有去处，数出来而不是硬塞', () => {
   assert.equal(report.unattachedLongform, 3);
   assert.equal(report.reviews, 2);
@@ -133,4 +126,26 @@ test('用户写的字一个不少地过去了，逗号引号换行都在', () =>
 test('没有行的分类不出文件——一个 0 行的 podcast_mark.csv 只会让人以为漏抓了', () => {
   assert.ok(!files.some((f) => f.name.startsWith('podcast')));
   assert.ok(!files.some((f) => parseCsv(f.text).length <= 1));
+});
+
+test('没有豆瓣链接的那条不进 zip，改写进 zip 外面的核对清单', () => {
+  // 一次真实导入印证了它注定失败：42 条里 41 成功，1 失败，
+  // 报 `Could not find item: `（冒号后面是空的）。
+  //
+  // 代价不是那一行本身，是它**教会用户忽略失败清单**——全量导入会固定报 7 个
+  // 失败，真出了别的问题也混在里面看不见了。
+  const all = files.filter((f) => f.name.endsWith('_mark.csv')).flatMap((f) => parseCsvObjects(f.text));
+  assert.equal(all.filter((r) => r.links === '').length, 0, 'zip 里不该有空 links 的行');
+
+  assert.equal(report.noLink, 1);
+  const sc = fileNamed(sidecars, 'neodb-needs-check.csv');
+  assert.equal(parseCsvObjects(sc.text).length, report.noLink);
+  // 它必须在 zip 外面，否则一样会被导入。
+  assert.ok(!files.some((f) => f.name === 'neodb-needs-check.csv'));
+});
+
+test('zip 里的每一行都有一条能定位的链接', () => {
+  const all = files.filter((f) => f.name.endsWith('_mark.csv')).flatMap((f) => parseCsvObjects(f.text));
+  assert.equal(all.length, report.marks);
+  for (const r of all) assert.ok(r.links.trim().length > 0);
 });

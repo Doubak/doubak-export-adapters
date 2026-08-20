@@ -85,11 +85,13 @@ function writeAll(sub, files) {
 const summary = { doulists: data.doulists.length, multiRevisionMarks: data.multiRevisionMarks };
 
 if (wanted.includes('neodb')) {
-  const { files, report } = buildNeodb(data);
+  const { files, sidecars, report } = buildNeodb(data);
   summary.neodb = report;
   const dir = join(outDir, 'neodb');
   mkdirSync(dir, { recursive: true });
   writeFileSync(join(dir, 'neodb-import.zip'), zip(files));
+  // 旁挂文件不进 zip：它们是给人看的，不该被导入。
+  for (const f of sidecars) writeFileSync(join(dir, f.name), f.text);
 
   const cats = Object.entries(report.byCategory)
     .map(([c, v]) => `${c} ${n(v.marks)}`)
@@ -99,7 +101,11 @@ if (wanted.includes('neodb')) {
   if (report.noDetailPage) {
     say(`  ⚠ ${n(report.noDetailPage)} 条没读到详情页，分不出电影还是剧集，按电影处理`);
   }
-  if (report.noLink) say(`  ⚠ ${n(report.noLink)} 条连豆瓣链接都没有（条目已被删），NeoDB 匹配不上`);
+  if (report.noLink) {
+    say(`  ⚠ ${n(report.noLink)} 条连豆瓣链接都没有（条目已被豆瓣删除），没有放进 zip——`
+      + '没有链接 NeoDB 就无从定位，导进去只会固定报几个失败，'
+      + '把真出问题的那条盖住。见 neodb-needs-check.csv');
+  }
   if (report.unattachedLongform) {
     say(`  ⚠ ${n(report.unattachedLongform)} 篇长文不挂在作品上（日记），NeoDB 的 CSV 导入没有地方放`);
   }

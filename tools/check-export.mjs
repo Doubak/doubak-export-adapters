@@ -102,7 +102,9 @@ if (existsSync(zipPath)) {
     for (const r of objects(text)) {
       rows += 1;
       const url = r.links.split(' ')[0];
-      if (!url) continue; // 条目已被豆瓣删掉，档案里也没有链接
+      // 空的 links 是**注定失败**的一行，不该出现在 zip 里：NeoDB 靠 links 定位条目。
+      // 实测一次真实导入报的就是 `Could not find item: `（冒号后面是空的）。
+      if (!url) { bad('NeoDB: 有一行的 links 是空的，导进去必然失败'); continue; }
       if (seen.has(url)) bad(`NeoDB: ${url} 出现了不止一次`);
       seen.add(url);
 
@@ -122,10 +124,14 @@ if (existsSync(zipPath)) {
     }
   }
 
-  const expected = data.marks.length;
-  if (!isSample && rows !== expected) bad(`NeoDB: 标记 ${rows} 行，档案里有 ${expected} 条`);
+  // 条目被豆瓣删掉、canonical 里连 URL 都没有的那些不进 zip——它们在
+  // `neodb-needs-check.csv` 里。所以该有的行数是「有链接的标记数」。
+  const expected = data.marks.filter((m) => m.subject?.url).length;
+  const noLink = data.marks.length - expected;
+  if (!isSample && rows !== expected) bad(`NeoDB: 标记 ${rows} 行，该有 ${expected} 条`);
   if (isSample && rows > expected) bad(`NeoDB: 标记 ${rows} 行，比档案里的 ${expected} 条还多`);
-  notes.push(`NeoDB     标记 ${rows} 行 · ${files.size} 张表 · zip 拆得开`);
+  notes.push(`NeoDB     标记 ${rows} 行 · ${files.size} 张表 · zip 拆得开`
+    + (noLink ? `（另有 ${noLink} 条没有豆瓣链接，在 neodb-needs-check.csv 里）` : ''));
 }
 
 // ── Letterboxd ───────────────────────────────────────────────────────────
