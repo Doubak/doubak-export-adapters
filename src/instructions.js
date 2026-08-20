@@ -5,7 +5,7 @@
  * （看过一次、想看一次）——只给一堆 CSV 不说去哪儿传，等于没做完。
  *
  * 说明里带着这一次的真实条数。「导出成功」这四个字什么也没说，
- * 「看过 952 部、想看 508 部、剧集 639 部没导」才说明白了发生过什么。
+ * 「看过 953 部、想看 509 部、剧集 641 部没导」才说明白了发生过什么。
  */
 
 /** @param {{neodb?: object, letterboxd?: object, goodreads?: object, doulists: number, multiRevisionMarks: number}} r */

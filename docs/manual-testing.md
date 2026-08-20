@@ -23,15 +23,15 @@ node bin/export.js ~/downloads/20260806-canonical /tmp/export-full
 
 ```
 NeoDB  → /tmp/export-full/neodb/neodb-import.zip
-  标记 2945 条（book 145 · game 604 · movie 1468 · music 84 · performance 5 · tv 639）
+  标记 2943 条（book 145 · game 598 · movie 1470 · music 84 · performance 5 · tv 641）
   ⚠ 8 条没读到详情页，分不出电影还是剧集，按电影处理
-  ⚠ 7 条连豆瓣链接都没有（条目已被删），NeoDB 匹配不上
+  ⚠ 7 条连豆瓣链接都没有（条目已被豆瓣删除），没有放进 zip
 ```
 
 对着自己的档案问三句：
 
-- **总数对得上吗。** 「标记 2945 条」该等于 canonical 里 `marks.ndjson` 的行数（`wc -l`）。
-- **分类的比例说得通吗。** 「剧集 639」意味着你的「电影」里有三成是剧集。如果你几乎不看剧集却看到几百，那是判据出问题了，不是数据。
+- **总数对得上吗。** 「标记 2943 条」加上「7 条没有豆瓣链接」，该等于 canonical 里 `marks.ndjson` 的行数（`wc -l`，实测 2950）。
+- **分类的比例说得通吗。** 「剧集 641」意味着你的「电影」里有三成是剧集。如果你几乎不看剧集却看到几百，那是判据出问题了，不是数据。
 - **⚠ 那几行的数字大得离谱吗。** 「没读到详情页」如果是几千而不是几个，说明详情页那条路线基本没抓到——这时候该先回去补抓，而不是继续导。
 
 ---
@@ -45,8 +45,8 @@ node tools/check-export.mjs ~/downloads/20260806-canonical /tmp/export-full
 它把刚写出来的文件**读回来**，跟 canonical 逐条逐字段对：
 
 ```
-NeoDB     标记 2945 行 · 7 张表 · zip 拆得开
-Letterboxd 看过 952 · 想看 508
+NeoDB     标记 2943 行 · 7 张表 · zip 拆得开（另有 7 条没有豆瓣链接，在 neodb-needs-check.csv 里）
+Letterboxd 看过 953 · 想看 509
 Goodreads  145 本
 
 ✔ 每一条都跟档案对得上。可以上传了。
@@ -99,7 +99,7 @@ node bin/export.js ~/downloads/20260806-canonical /tmp/export-sample --sample=20
 node tools/check-export.mjs ~/downloads/20260806-canonical /tmp/export-sample --sample
 ```
 
-不带的话它会报「20 行，档案里有 2945 条」——这是对的，**「产物比档案少」正是漏导的症状**，默认就放行等于把最该报的那个警报关掉。带上 `--sample`，逐条的检查照做，只是不再核对总条数。
+不带的话它会报「20 行，该有 2943 条」——这是对的，**「产物比档案少」正是漏导的症状**，默认就放行等于把最该报的那个警报关掉。带上 `--sample`，逐条的检查照做，只是不再核对总条数。
 
 ### NeoDB
 
@@ -193,4 +193,4 @@ unzip -p /tmp/export-sample/neodb/neodb-import.zip movie_mark.csv | grep 3496508
 - **Goodreads 上的封面/出版社跟豆瓣不一样。** 匹配是按 ISBN 走的，ISBN 认的是那一个具体版本。
 - **豆列没有导出。** NeoDB 的 CSV 导入里没有「收藏单」这一档，不是漏了。
 - **3 篇日记没有导出。** 它们不挂在任何作品上，而 NeoDB 的笔记必须挂一个条目。
-- **7 条标记的修订历史没了。** 三个平台都只收「现在是什么样」。历史还在 canonical 里——这也是**别把这几个 CSV 当成备份**的原因。
+- **8 条标记的修订历史没了。** 三个平台都只收「现在是什么样」。历史还在 canonical 里——这也是**别把这几个 CSV 当成备份**的原因。
