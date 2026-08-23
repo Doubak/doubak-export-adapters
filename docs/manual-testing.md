@@ -1,6 +1,6 @@
 # 手工验一遍
 
-`npm test` 有 85 个测试，但它们证明不了这件事最要紧的那一半。
+`npm test` 有 160 个测试，但它们证明不了这件事最要紧的那一半。
 
 测试对着 `test/fixtures/` 里那 18 条真实记录跑，证明的是**代码在那 18 条上是对的**。它证明不了：
 
@@ -22,8 +22,10 @@ node bin/export.js ~/downloads/20260806-canonical /tmp/export-full
 **报告本身就是第一道检查。** 里面每个数都该说得通：
 
 ```
-NeoDB  → /tmp/export-full/neodb/neodb-import.zip
-  标记 2943 条（book 145 · game 598 · movie 1470 · music 84 · performance 5 · tv 641）
+NeoDB  → /tmp/export-full/neodb/neodb-ndjson-import.zip  (NDJSON)
+  标记 2943 条（book 145 · performance 5 · game 598 · movie 1470 · tv 641 · music 84）· 评分 1788 · 短评 2110
+  标签 712 个（贴了 7222 次）· 书评影评 2 篇 · 笔记 0 篇
+  豆列 6 份（73 条） · 不挂作品的日记 3 篇 · 条目 2979 个
   ⚠ 8 条没读到详情页，分不出电影还是剧集，按电影处理
   ⚠ 7 条连豆瓣链接都没有（条目已被豆瓣删除），没有放进 zip
 ```
@@ -45,7 +47,7 @@ node tools/check-export.mjs ~/downloads/20260806-canonical /tmp/export-full
 它把刚写出来的文件**读回来**，跟 canonical 逐条逐字段对：
 
 ```
-NeoDB     标记 2943 行 · 7 张表 · zip 拆得开（另有 7 条没有豆瓣链接，在 neodb-needs-check.csv 里）
+NeoDB(nd)  标记 2943 条 · 条目 2979 个 · 记录 14786 条 (Tag 712 · TagMember 7222 · Rating 1788 · …)
 Letterboxd 看过 953 · 想看 509
 Goodreads  145 本
 
@@ -63,14 +65,20 @@ Goodreads  145 本
 | 评分在 1–5（NeoDB 是 ×2 之后的 1–10） | 越界的评分要么被拒，要么被截成别的数 |
 | 剧集没混进 Letterboxd | 可能匹配到一部**同名电影**，观影记录里凭空多一部没看过的片子 |
 | Goodreads 只有「读过」带读完日期 | 替你宣称你读完了想读的书 |
+| **每个 `withRegardTo` 都能在 `catalog.ndjson` 里找到** | 找不到就是 `KeyError` → 记一条 failed 过去，**一条静默导不进去的记录** |
+| NDJSON 的 `ShelfMember` 上没有 `progress` 键 | 写 `null` 会**清掉**你在 NeoDB 上手工填的阅读进度 |
+| 有标签的话必须有 `TagMember` 记录 | `ShelfMember` 上写 tags 没有任何作用，712 个标签会一声不吭地丢掉 |
 
 退出码 0 是全对，1 是有对不上的。**这一步过不了就别上传**，直接开 issue。
 
 如果想自己再看两眼：
 
 ```sh
-unzip -l /tmp/export-full/neodb/neodb-import.zip     # 里面有哪几张表
-unzip -p /tmp/export-full/neodb/neodb-import.zip movie_mark.csv | head -3
+unzip -l /tmp/export-full/neodb/neodb-ndjson-import.zip   # 该正好两个文件
+unzip -p /tmp/export-full/neodb/neodb-ndjson-import.zip journal.ndjson | head -3
+# 每种记录各有多少（jq 没装的话用 grep -o '"type":"[^"]*"' | sort | uniq -c）
+unzip -p /tmp/export-full/neodb/neodb-ndjson-import.zip journal.ndjson \
+  | tail -n +2 | jq -r .type | sort | uniq -c
 head -3 /tmp/export-full/letterboxd/letterboxd-watched.csv
 cat /tmp/export-full/letterboxd/letterboxd-needs-check.csv   # 匹配不了的那几条
 ```
@@ -103,8 +111,18 @@ node tools/check-export.mjs ~/downloads/20260806-canonical /tmp/export-sample --
 
 ### NeoDB
 
-1. 头像菜单 → `数据` → 导入 → **CSV**，上传 `neodb/neodb-import.zip`（整个 zip，不用解压）。
-2. **把可见性设成「仅自己可见」。** 这是小样，不该出现在关注你的人的时间线上。
+> **先开一个新账号。** NDJSON 这一路带进去的东西比 CSV 多得多——豆列会变成收藏单、
+> 不挂作品的日记会变成 Article **并且发到联邦宇宙**、状态历史会写进书架日志。
+> 拿一个已经有数据的主账号试，出了问题分不清是导入带来的还是本来就有的。
+>
+> 这也是为什么 <https://neodb.social/users/doubak/> 现在留着不动：它是 CSV 那一路的
+> 干净证据，PR 里引用过。
+
+1. 头像菜单 → `数据` → **导入 NeoDB 备份**，上传 `neodb/neodb-ndjson-import.zip`
+   （整个 zip，不用解压）。「检测到的格式」那一行应当显示 **NDJSON**——显示别的就说明
+   zip 根目录下没有 `journal.ndjson`，停下来开 issue。
+2. **可见性这一路上没得选。** 页面检测到 ndjson 就会把那三个单选框藏起来，全部按公开
+   导入。要别的可见性，回去用 `--visibility=1`（仅关注者）或 `2`（仅提及者）重新导出。
 3. 等。NeoDB 库里没有的条目它会**自己去豆瓣抓一份**建出来，所以第一次很慢，页面要挂着。
 
 传完之后逐项看那 20 条：
@@ -115,13 +133,40 @@ node tools/check-export.mjs ~/downloads/20260806-canonical /tmp/export-sample --
 - [ ] **短评**：整段在，标点没被吃掉，换行还在。
 - [ ] **标签**：几个就是几个，没有被拆开或粘在一起。
 - [ ] **日期**：标记时间是豆瓣上那天，不是今天。
-- [ ] **书评**：`game_review.csv` 那两篇进去了，而且**有标题**。标题空了就是重复表头那一处理解错了。
+- [ ] **书评**：那两篇进去了，而且**有标题**。
+- [ ] **豆列**：收藏单里那几份在不在，私密那份是不是「仅提及者可见」，成员数对不对。
+      成员的短评（`metadata.note`）**没验证过**，在不在都记一笔。
+- [ ] **不挂作品的日记**：那 3 篇变成了 Article。**它们会发到联邦宇宙**，所以先确认这是你要的。
+- [ ] **标签**：几个就是几个。NDJSON 这边标签是独立记录，CSV 那边「标签里有竖线会被拆开」
+      的问题这里不存在——真出现了就是 bug。
+- [ ] **阅读进度**：如果你在 NeoDB 上手工填过「读到第几页」，导入之后**它该还在**。
+      没了就说明写了 `progress: null`，停下来开 issue。
 
-**`neodb-needs-check.csv` 不要上传。** 它跟 zip 放在同一个目录里，但它是给人看的：里面是豆瓣已经删掉、档案里连链接都没留下的条目，NeoDB 无从定位。
+**`neodb-needs-check.csv` 和 `neodb-doulist-needs-check.csv` 不要上传。** 它跟 zip 放在同一个目录里，但它是给人看的：里面是豆瓣已经删掉、档案里连链接都没留下的条目，NeoDB 无从定位。
 
 导入完成后 NeoDB 会给一行结果，形如 `41 items imported, 0 skipped, 1 failed`。**`failed` 应当是 0。** 实测 2026-08-20 第一次真实导入 42 条时报了 1 个 `Could not find item: `（冒号后面是空的），原因正是上面那条没有链接的记录——现在它已经不进 zip 了，所以再遇到非 0 的 `failed`，那就是真出了问题，请开 issue。
 
 不满意就把这 20 条删掉重来——**这正是先传 20 条的意义**。
+
+### NeoDB · 状态历史（`--shelf-history`）
+
+这一路是全新的，**默认关着**，而且要单独验一次——别在同一次里连它一起验：
+
+```sh
+node bin/export.js ~/downloads/20260806-canonical /tmp/export-sample-history \
+  --target=neodb --sample=40 --shelf-history
+```
+
+40 条切出来大约几十条历史，小到可以一条一条看。传进**另一个**新账号，然后：
+
+- [ ] 作品页面上的「书架日志 / 时间线」里，一件作品的几次状态变化按日期排开了。
+- [ ] **那几个日期是豆瓣上广播的日期**，不是今天，也不是标记日期。
+- [ ] 有一件作品的历史里，某一次的星跟现在的星**不一样**——这正是它的意义：
+      豆瓣每次编辑都覆盖评分，广播是发出去那一刻冻住的。找不到这样的例子说明取到的
+      是标记上的星，不是广播里的。
+- [ ] 没有凭空多出来的事件：历史里出现的作品，你都确实标记过。
+
+确认没问题再考虑全量的 3179 条。
 
 ### Letterboxd
 
@@ -191,6 +236,9 @@ unzip -p /tmp/export-sample/neodb/neodb-import.zip movie_mark.csv | grep 3496508
 - **NeoDB 里的评分是豆瓣的两倍。** 它的评分是 1–10，豆瓣是 1–5 星。★★★★ → 8 是对的。
 - **Letterboxd 和 Goodreads 的评分不换算。** 两边都是 1–5。
 - **Goodreads 上的封面/出版社跟豆瓣不一样。** 匹配是按 ISBN 走的，ISBN 认的是那一个具体版本。
-- **豆列没有导出。** NeoDB 的 CSV 导入里没有「收藏单」这一档，不是漏了。
-- **3 篇日记没有导出。** 它们不挂在任何作品上，而 NeoDB 的笔记必须挂一个条目。
+- **NDJSON 那一路没有可见性选项。** 是 NeoDB 的上传页面藏起来的，不是这边漏了。
+- **豆列里有 61 条没进去。** 它们是别人的影评、小组、人物、照片——NeoDB 的收藏单只装条目。
+  两份豆列因此变成空的，单子本身还在。
+- **长文正文里的图还指着豆瓣的图床。** 图片字节在 WARC 里，这个工具只读 canonical，不搬运。
+- **用 `--target=neodb_csv` 的话，豆列和 3 篇日记依然没有导出。** CSV 装不下，不是漏了。
 - **8 条标记的修订历史没了。** 三个平台都只收「现在是什么样」。历史还在 canonical 里——这也是**别把这几个 CSV 当成备份**的原因。

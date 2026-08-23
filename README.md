@@ -7,10 +7,13 @@
 豆备 (Doubak) 的对外导出适配器。把 [解析器](https://github.com/Doubak/doubak-data-parser) 产出的 **canonical** 转成 **NeoDB / Letterboxd / Goodreads** 的导入文件。
 
 ```sh
-node bin/export.js <canonical 目录> [输出目录] [--target=…] [--sample=N]
+node bin/export.js <canonical 目录> [输出目录] [--target=…] [--sample=N] [--shelf-history]
 node tools/check-export.mjs <canonical 目录> <导出目录>   # 上传前离线自查
-npm test    # node --test，零依赖，不需要 npm install（85 个测试）
+npm test    # node --test，零依赖，不需要 npm install（160 个测试）
 ```
+
+`--target` 可选 `neodb`（NDJSON）、`neodb_csv`（旧的 CSV）、`letterboxd`、`goodreads`；
+不写的话出前面三个，**`neodb_csv` 要显式要**。
 
 需要 Node ≥ 20。**不联网**——产出是几个文件，什么时候上传、上不上传，都不影响档案。
 
@@ -26,22 +29,26 @@ node bin/export.js ~/downloads/20260806-canonical ~/downloads/20260806-export
 
 实测同一份真实档案（2950 条标记），三个平台能收下的差得很远：
 
-| | 电影 | 剧集 | 图书 | 音乐 | 游戏 | 舞台剧 | 书评影评 | 豆列 | 标签 |
-|---|---|---|---|---|---|---|---|---|---|
-| **档案里有** | 1470 | 641 | 145 | 84 | 605 | 5 | 2 | 6 | ✅ |
-| **NeoDB** | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✖︎ | ✅ |
-| **Letterboxd** | ✅ | ✖︎ | ✖︎ | ✖︎ | ✖︎ | ✖︎ | ✖︎ | ✖︎ | ✅ |
-| **Goodreads** | ✖︎ | ✖︎ | ✅ | ✖︎ | ✖︎ | ✖︎ | ✖︎ | ✖︎ | 书架 |
+| | 电影 | 剧集 | 图书 | 音乐 | 游戏 | 舞台剧 | 书评影评 | 日记 | 豆列 | 状态历史 | 标签 |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+| **档案里有** | 1470 | 641 | 145 | 84 | 605 | 5 | 2 | 3 | 6 | 3179 | ✅ |
+| **NeoDB（NDJSON）** | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| **NeoDB（CSV）** | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✖︎ | ✖︎ | ✖︎ | ✅ |
+| **Letterboxd** | ✅ | ✖︎ | ✖︎ | ✖︎ | ✖︎ | ✖︎ | ✖︎ | ✖︎ | ✖︎ | ✖︎ | ✅ |
+| **Goodreads** | ✖︎ | ✖︎ | ✅ | ✖︎ | ✖︎ | ✖︎ | ✖︎ | ✖︎ | ✖︎ | ✖︎ | 书架 |
 
 一次真实导出的输出：
 
 ```
-NeoDB  → neodb/neodb-import.zip
-  标记 2943 条（book 145 · game 598 · movie 1470 · music 84 · performance 5 · tv 641）· 书评影评 2 篇
+NeoDB  → neodb/neodb-ndjson-import.zip  (NDJSON)
+  标记 2943 条（book 145 · performance 5 · game 598 · movie 1470 · tv 641 · music 84）· 评分 1788 · 短评 2110
+  标签 712 个（贴了 7222 次）· 书评影评 2 篇 · 笔记 0 篇
+  豆列 6 份（73 条） · 不挂作品的日记 3 篇 · 条目 2979 个
+  状态历史 3179 条（从广播还原，豆瓣自己已经不显示了）
   ⚠ 8 条没读到详情页，分不出电影还是剧集，按电影处理
   ⚠ 7 条连豆瓣链接都没有（条目已被豆瓣删除），没有放进 zip——见 neodb-needs-check.csv
-  ⚠ 3 篇长文不挂在作品上（日记），NeoDB 的 CSV 导入没有地方放
-  · 豆列 6 份没有导出：NeoDB 的 CSV 导入里没有「收藏单」这一档
+  ⚠ 8 条没有标记日期，这几条不写 published
+  ⚠ 豆列里有 61 条不是作品条目（影评/小组/人物/照片…），收藏单装不下
 
 Letterboxd → letterboxd/
   看过 953 部 · 想看 509 部（含在看 0 部）
@@ -55,6 +62,54 @@ Goodreads → goodreads/
 ```
 
 **「导不出去的是什么、有多少」跟「导出去的是什么」一样是正式产出。** 三个平台没有一个能收下整份档案，一句「导出成功」等于什么也没说。
+
+## NeoDB 那一路现在出 NDJSON，CSV 降成 `--target=neodb_csv`
+
+NeoDB 的维护者在 [PR 里](https://github.com/neodb-social/neodb/pull/1801)说得很直接：
+
+> 厉害。可以生成NDJSON吗？旧的CSV格式只是为了兼容NiceDB和Doufen，限制太多了。
+
+也就是说 CSV 不只是「旧」——它是为了兼容另外两个工具留下的一层壳。NDJSON 是 NeoDB 自己导出、自己导入的格式，装得下 CSV **结构上装不下**的四样东西：**豆列**、**不挂作品的日记**、**每条记录各自的可见性**，以及**状态历史**。
+
+最后一样才是真正要紧的。豆瓣只存当前状态，**但广播是发出去那一刻就冻住的**，所以 3411 条广播里藏着一条 想看 → 在看 → 看过 的时间线，还带着当时打的星。实测 2373 个作品有这样的历史，其中 **678 个状态变过不止一次**——这是豆瓣自己都不再保留的东西。加 `--shelf-history` 带上（默认不带，因为它是最新的一条路，还没有真实往返验证过）。
+
+CSV 那一份没删，只是要显式要。它现在只有两个地方比 NDJSON 强，两个都写在下面的「NDJSON 换来的两处倒退」里。
+
+### 两处倒退，说清楚
+
+- **没有 ISBN / IMDb 的 `info` 兜底。** `parse_catalog` 调的是 `get_item_by_info_and_links("", "", links)`——标题空、info 空，**只靠 URL 匹配**。CSV 那边 `info` 列里的 `isbn:` 还能找回一本豆瓣页面已经没了的书，这边不能。IMDb 有 URL 形式（写进 `external_resources`），ISBN 没有。
+- **上传页面上没有可见性选项。** `data.html` 里检测到 ndjson 就把那三个单选框整个隐藏，于是 `request.POST.get("visibility", 0)` 恒为 0，全部按公开导入。所以这个选择挪进了文件里：`--visibility=1`（仅关注者）/ `2`（仅提及者）。
+
+### 五个静默的坑
+
+形状全部是读 [`journal/importers/ndjson.py`](https://github.com/neodb-social/neodb/blob/main/neodb/journal/importers/ndjson.py) 定的。下面每一个写错了都照样是合法 JSON、照样解析通过、照样不报错：
+
+1. **`ShelfLog` 的形状跟其他记录都不一样**——它读顶层的 `item` / `status` / `timestamp`，不是 `content.withRegardTo` / `content.status` / `content.published`。
+2. **`ShelfMember` 上没有标签这一项。** CSV 是把标签挤在标记那一行里的，NDJSON 不从那儿读；不单独出 `Tag` + `TagMember`，换个格式就等于丢掉 712 个标签。
+3. **`progress` 是三态的**：键不在 = 不动，`null` = **清掉用户手工填的进度**，有值 = 恢复。豆瓣不记进度，所以这个键整个不写。
+4. **舞台剧的广播 `target_type` 叫 `loc`，不叫 `drama`。** 12 种取值里根本没有 `drama`。
+5. **豆列里分类 `3114`、写成 `www.douban.com/subject/<id>/` 的其实是游戏**，而 `DoubanGame.URL_PATTERNS` 只认 `www.douban.com/game/<id>/`。改写是量出来的：31 条 id 在档案里的条目里 30 条是游戏，且档案里存的 URL 全是 `/game/`。
+
+前三条有一个静态契约测试盯着（`test/neodb-ndjson.test.js` 里那张从导入器源码抄下来的表）：真正会出事的环境是一个跑着的 NeoDB，这边任何测试都进不去，所以检查只能是静态的，而且必须断言它真的扫到了东西。把生成器改成用错的形状写 `ShelfLog`，会有 7 个测试变红——所以它不是空转的。
+
+### 跟 CSV 那一路对一遍
+
+两份产物各自都跟 canonical 对过了，但那不能代替互相对：**CSV 是唯一做过真实往返的路**（2026-08-20，42 条进去 41 条），所以它是「已知好的」那一份，NDJSON 跟它不一致的地方就是「一个验证过的行为被换格式换掉了」。
+
+实测拿新的 NDJSON 对 2026-08-20 **真的导进去过的那份 CSV**：作品 2943 对 2943，状态 / 评分 / 短评 / 标签 / 分类 / IMDb 链接逐条逐字段一致，两篇书评的标题和正文一致，`neodb-needs-check.csv` 逐字节一致。
+
+这件事现在是常驻的，不是一次性的：
+
+- `tools/check-export.mjs` 在同时看到 `neodb/` 和 `neodb_csv/` 两个目录时会自动多跑一遍互相对比（`--target=neodb,neodb_csv` 就有）。
+- `test/neodb-ndjson.test.js` 对着 fixture 跑同一件事，所以改坏了 `npm test` 就红。
+
+有一处要说清楚：**分类那一项证明得比看起来少。** 两条路都调同一个 `classify()`，所以它们一致只证明 `AP_TYPE` 那张表跟七个 CSV 文件名是对得上的，**不证明电影/剧集分对了**。一个不可能失败的检查，对它「本以为在检查的那件事」什么也没证明。
+
+### 三件故意不做的
+
+- **不出 `actor.ndjson`。** `process_actor` 会拿归档里的名字和简介覆盖目标账号的身份——一次导入的副作用不该是「你的昵称变了」。
+- **不出 `attachments/`。** 图片字节在 WARC 里，这个工具只读 canonical 而且不联网。长文正文里的图片链接原样留着，指向豆瓣的图床。
+- **不写 `posts`。** 上游的 `import_post` 是个空函数，广播变不成嘟文。
 
 ## NeoDB 不需要 API，也不需要谁批准
 
@@ -72,7 +127,8 @@ NeoDB 还收一种**用户自己上传的 zip**（[`journal/importers/csv.py`](h
 
 | 目标 | 出处 |
 |---|---|
-| NeoDB | [`journal/importers/csv.py`](https://github.com/neodb-social/neodb/blob/main/neodb/journal/importers/csv.py) + [`base.py`](https://github.com/neodb-social/neodb/blob/main/neodb/journal/importers/base.py) + [`exporters/csv.py`](https://github.com/neodb-social/neodb/blob/main/neodb/journal/exporters/csv.py) |
+| NeoDB（NDJSON） | [`journal/importers/ndjson.py`](https://github.com/neodb-social/neodb/blob/main/neodb/journal/importers/ndjson.py) + [`exporters/ndjson.py`](https://github.com/neodb-social/neodb/blob/main/neodb/journal/exporters/ndjson.py) + 各 model 的 `ap_object` + `users/templates/users/data.html` 里那段格式检测 |
+| NeoDB（CSV） | [`journal/importers/csv.py`](https://github.com/neodb-social/neodb/blob/main/neodb/journal/importers/csv.py) + [`base.py`](https://github.com/neodb-social/neodb/blob/main/neodb/journal/importers/base.py) + [`exporters/csv.py`](https://github.com/neodb-social/neodb/blob/main/neodb/journal/exporters/csv.py) |
 | Letterboxd | [官方导入说明](https://letterboxd.com/about/importing-data/) + [`rwalle/douban-export`](https://github.com/rwalle/douban-export/blob/master/SPEC.md) 用过的列 |
 | Goodreads | [`rwalle/douban-export`](https://github.com/rwalle/douban-export/blob/master/SPEC.md) 的 14 列（那个工具是真对着 Goodreads 跑过的） |
 
@@ -124,12 +180,13 @@ canonical 里一条标记记的是**一串观测**：哪个版本的解析器、
 
 ## 还没做的
 
-- **豆列 → NeoDB 的收藏单。** CSV 导入里没有这一档，Collection 只存在于 NeoDB 自己的 NDJSON 归档格式里，而那个格式要两遍扫描、要先解析出条目表，是它的内部实现细节。照着猜一个出来不如明说没做。同一个格式里的 `ShelfLog`（状态变更历史）是三个平台里唯一跟 canonical 的事件日志对得上的东西，值得再看。
+- **NDJSON 那一路还没做过真实往返验证。** 离线能证明的只是「产出符合从导入器源码里读出来的格式」，不是「对方真的收」。CSV 那一路验过（下面那条），NDJSON 没有。**状态历史尤其没有**——它是全新的一条路，所以默认关着。
 - **Letterboxd 和 Goodreads 还没做过真实往返验证。** 那两家目前能证明的只是「产出符合读源码/读文档读出来的格式」，不是「对方真的收」。步骤在 [`docs/manual-testing.md`](docs/manual-testing.md)，`--sample=N` 就是为它加的。
 
   **NeoDB 这一路已经验过了**（2026-08-20，40 条小样）：42 条记录进去 41 条，唯一那次失败是没有豆瓣链接的一条，现在已经不进 zip。逐项核对过标记的状态、评分（豆瓣 1–5 星 → NeoDB 1–10 分）、短评、标签、标记日期，以及两篇书评**带着标题**——最后这一条最要紧，它是「重复表头后一个赢」那个判断的唯一实证。
 
   顺带得到一次外部旁证：NeoDB 的分类是它自己按条目重新判的（文件名不参与匹配），而它判出来的 movie 6 / tv 8 跟这边按 `集数`/`首播`/`季数` 判的**完全一致**（n=14）。这是那条判据目前唯一的外部证据。注意它证明的不是「我们分对了桶」——就算把两个桶对调，NeoDB 那边的书架也一样是对的。
+- ~~豆列成员的短评没验证过~~ —— **已确认，2026-08-24。** `ItemList.append_item` 的 docstring 说具名字段要直接传、不要塞进 `metadata` dict，看着像是这条路走不通。但 NeoDB 自己的测试 `test_ndjson_member_note_edit_reindexes_collection` 就是拿 `append_item(item, metadata={"note": …})` 写进去、再读出 `member.note` 的——所以 `metadata` 这条路是它自己在用的那条。读 docstring 会得出相反的结论，又一次。
 - Letterboxd 的 `Rewatch` 列没写——豆瓣不记重看。
 - Goodreads 的 `Binding` 没写：豆瓣写「平装 / 精装」，Goodreads 要 `Paperback / Hardcover`，翻译得出来，但 ISBN 已经把版本钉死了，这一列只会在冲突时添乱。
 
