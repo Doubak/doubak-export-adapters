@@ -1,2 +1,6 @@
 node_modules/
 export-out/
+
+# 覆盖率的中间产物，CI 里生成，不进仓库
+lcov.info
+coveralls.json

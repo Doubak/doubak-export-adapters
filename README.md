@@ -1,6 +1,6 @@
 # doubak-export-adapters
 
-[![test](https://github.com/Doubak/doubak-export-adapters/actions/workflows/test.yml/badge.svg?branch=main)](https://github.com/Doubak/doubak-export-adapters/actions/workflows/test.yml?query=branch%3Amain)
+[![test](https://github.com/Doubak/doubak-export-adapters/actions/workflows/test.yml/badge.svg?branch=main)](https://github.com/Doubak/doubak-export-adapters/actions/workflows/test.yml?query=branch%3Amain) [![Coverage Status](https://coveralls.io/repos/github/Doubak/doubak-export-adapters/badge.svg?branch=main)](https://coveralls.io/github/Doubak/doubak-export-adapters?branch=main)
 
 > **这是源码仓库。** 项目主页在 **<https://doubak.com>**。
 
