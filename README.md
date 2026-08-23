@@ -1,5 +1,7 @@
 # doubak-export-adapters
 
+[![test](https://github.com/Doubak/doubak-export-adapters/actions/workflows/test.yml/badge.svg?branch=main)](https://github.com/Doubak/doubak-export-adapters/actions/workflows/test.yml?query=branch%3Amain)
+
 > **这是源码仓库。** 项目主页在 **<https://doubak.com>**。
 
 豆备 (Doubak) 的对外导出适配器。把 [解析器](https://github.com/Doubak/doubak-data-parser) 产出的 **canonical** 转成 **NeoDB / Letterboxd / Goodreads** 的导入文件。
