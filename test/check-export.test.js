@@ -11,10 +11,16 @@ const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const CHECK = join(ROOT, 'tools', 'check-export.mjs');
 const EXPORT = join(ROOT, 'bin', 'export.js');
 
-/** 跑一次导出，返回产出目录。 */
+/**
+ * 跑一次导出，返回产出目录。
+ *
+ * 显式点名四个目标：`neodb_csv` 不在默认里（默认只出 NDJSON 那一份），
+ * 而这里要两份都在，好让校验器的两条路都被走到。
+ */
 function exported() {
   const dir = mkdtempSync(join(tmpdir(), 'doubak-export-'));
-  run(process.execPath, [EXPORT, FIXTURE, dir], { stdio: 'ignore' });
+  run(process.execPath, [EXPORT, FIXTURE, dir, '--target=neodb,neodb_csv,letterboxd,goodreads'],
+    { stdio: 'ignore' });
   return dir;
 }
 
@@ -63,7 +69,7 @@ test('「想读」带上读完日期就抓得住', () => {
 test('NeoDB 的表被改名就抓得住——名字不对它会整张跳过，而且不报错', () => {
   const dir = exported();
   // zip 里的文件名是明文存的，直接在字节里替换就能改名（长度不变）。
-  const p = join(dir, 'neodb', 'neodb-import.zip');
+  const p = join(dir, 'neodb_csv', 'neodb-import.zip');
   const buf = readFileSync(p);
   const from = Buffer.from('movie_mark.csv');
   const to = Buffer.from('movee_mark.csv');
@@ -99,5 +105,19 @@ test('小样：带 --sample 该过，不带该失败', () => {
 
   const { code, out } = check(dir);
   assert.equal(code, 1);
-  assert.match(out, /标记 \d+ 行，该有 \d+ 条/);
+  assert.match(out, /ShelfMember \d+ 条，该有 \d+ 条/);
+});
+
+test('NDJSON：journal.ndjson 被改名就抓得住——上传页面会认成「未知格式」', () => {
+  const dir = exported();
+  const p = join(dir, 'neodb', 'neodb-ndjson-import.zip');
+  const buf = readFileSync(p);
+  const from = Buffer.from('journal.ndjson');
+  const to = Buffer.from('joornal.ndjson');
+  let at = 0;
+  while ((at = buf.indexOf(from, at)) !== -1) { to.copy(buf, at); at += from.length; }
+  writeFileSync(p, buf);
+  const { code, out } = check(dir);
+  assert.equal(code, 1);
+  assert.match(out, /zip 里没有 journal\.ndjson/);
 });

@@ -8,7 +8,10 @@
  * 「看过 953 部、想看 509 部、剧集 641 部没导」才说明白了发生过什么。
  */
 
-/** @param {{neodb?: object, letterboxd?: object, goodreads?: object, doulists: number, multiRevisionMarks: number}} r */
+/**
+ * @param {{neodb?: object, neodbCsv?: object, letterboxd?: object, goodreads?: object,
+ *          doulists: number, multiRevisionMarks: number, shelfHistory?: boolean}} r
+ */
 export function instructions(r) {
   const L = [];
   L.push('# 怎么把这些文件导进去');
@@ -20,27 +23,68 @@ export function instructions(r) {
   if (r.neodb) {
     L.push('## NeoDB');
     L.push('');
-    L.push('设置 → 数据 → 导入 → **CSV**，上传 `neodb/neodb-import.zip`（整个 zip，不用解压）。');
+    L.push('设置 → 数据 → **导入 NeoDB 备份**，上传 `neodb/neodb-ndjson-import.zip`');
+    L.push('（整个 zip，不用解压）。页面会自己认出格式，「检测到的格式」那一行应当显示 **NDJSON**。');
     L.push('');
-    L.push(`这一次带了 **${r.neodb.marks} 条标记**、${r.neodb.reviews} 篇书评影评、${r.neodb.notes} 篇笔记。`);
-    L.push('NeoDB 是按 zip 里的豆瓣链接找条目的，它库里没有的会自己去豆瓣抓一份建出来，');
+    L.push(`这一次带了 **${r.neodb.marks} 条标记**、${r.neodb.ratings} 个评分、`
+      + `${r.neodb.comments} 条短评、${r.neodb.tags} 个标签、`
+      + `${r.neodb.reviews} 篇书评影评、${r.neodb.notes} 篇笔记、`
+      + `${r.neodb.collections} 份豆列、${r.neodb.articles} 篇不挂作品的日记。`);
+    L.push('NeoDB 是按 `catalog.ndjson` 里的豆瓣链接找条目的，它库里没有的会自己去豆瓣抓一份，');
     L.push('所以第一次导会慢，而且要挂着。');
     L.push('');
-    if (r.doulists) {
-      L.push(`⚠ **${r.doulists} 份豆列没有导出。** NeoDB 的 CSV 导入里没有「收藏单」这一档，`);
-      L.push('它的收藏单只在 NeoDB 自己的 NDJSON 归档格式里有。豆列还在 canonical 里，');
-      L.push('也在生成的站点里。');
+    if (r.shelfHistory) {
+      L.push(`✦ 这一份**带着 ${r.neodb.shelfLogs} 条状态历史**，是从广播还原出来的：`);
+      L.push('广播是发出去那一刻就冻住的，所以它记着「你哪天把这部片子从想看改成看过」，');
+      L.push('还记着**你当时打的星**——豆瓣自己只留最后一次，这段历史在豆瓣上已经看不到了。');
+      L.push('');
+    } else {
+      L.push('· 这一份**没有带状态历史**。加 `--shelf-history` 重跑一次，可以从广播里还原出');
+      L.push('  一条带日期的 想看 → 在看 → 看过 时间线（豆瓣自己已经不显示了）。');
       L.push('');
     }
+    L.push('⚠ **NDJSON 这条路上没有可见性选项。** 上传页面检测到 NDJSON 就会把那三个单选框');
+    L.push('藏起来，所有记录一律按公开导入。要别的可见性，用 `--visibility=1`（仅关注者）或');
+    L.push('`--visibility=2`（仅提及者）重新导出——那个选择写在文件里，不在表单里。');
+    L.push('');
     if (r.neodb.noLink) {
       L.push(`⚠ **${r.neodb.noLink} 条没有放进 zip**：这些作品豆瓣已经删掉了，`);
       L.push('档案里连链接都没有，NeoDB 无从定位。它们列在 `neodb/neodb-needs-check.csv` 里，');
       L.push('那个文件**不要上传**——放进去只会固定报几个失败，把真出问题的那条盖住。');
       L.push('');
     }
-    if (r.neodb.unattachedLongform) {
-      L.push(`⚠ **${r.neodb.unattachedLongform} 篇日记没有导出**，因为它们不挂在任何作品上，`);
-      L.push('而 NeoDB 的笔记必须挂一个条目。');
+    if (r.neodb.doulistEntriesDropped) {
+      L.push(`⚠ 豆列里有 **${r.neodb.doulistEntriesDropped} 条不是作品条目**`);
+      L.push('（别人的影评、小组、人物、照片……），NeoDB 的收藏单只装条目，这些没有去处。');
+      L.push('见 `neodb/neodb-doulist-needs-check.csv`。');
+      L.push('');
+    }
+    L.push('还有两样这个包里没有：**图片没有随包搬运**（长文正文里的图还指着豆瓣的图床），');
+    L.push('**广播没有变成嘟文**（NeoDB 的导入器里那一段是空的）。两样都还在档案里。');
+    L.push('');
+  }
+
+  if (r.neodbCsv) {
+    L.push('## NeoDB（旧的 CSV 格式）');
+    L.push('');
+    L.push('设置 → 数据 → **导入 NeoDB 备份**，上传 `neodb_csv/neodb-import.zip`，');
+    L.push('「检测到的格式」那一行应当显示 **CSV**。');
+    L.push('');
+    L.push('CSV 是 NeoDB 为了兼容 NiceDB 和 Doufen 留下的格式，装不下豆列、装不下不挂作品的');
+    L.push('日记、装不下状态历史。**除非上面那份 NDJSON 出了问题，否则不用这个。**');
+    L.push('它唯一比 NDJSON 强的地方：上传时能选可见性，而且靠 `info` 列里的 `isbn:` 还能');
+    L.push('多认出几本豆瓣页面已经没了的书。');
+    L.push('');
+    L.push(`这一次带了 **${r.neodbCsv.marks} 条标记**、${r.neodbCsv.reviews} 篇书评影评、`
+      + `${r.neodbCsv.notes} 篇笔记。`);
+    L.push('');
+    if (r.doulists) {
+      L.push(`⚠ **${r.doulists} 份豆列没有导出。** CSV 导入里没有「收藏单」这一档。`);
+      L.push('');
+    }
+    if (r.neodbCsv.unattachedLongform) {
+      L.push(`⚠ **${r.neodbCsv.unattachedLongform} 篇日记没有导出**，因为它们不挂在任何作品上，`);
+      L.push('而 NeoDB 的笔记必须挂一个条目。（NDJSON 那一份里它们是 Article，导得进去。）');
       L.push('');
     }
   }

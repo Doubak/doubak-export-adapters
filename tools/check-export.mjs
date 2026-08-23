@@ -76,6 +76,8 @@ function objects(text) {
 
 const problems = [];
 const notes = [];
+/** 两条 NeoDB 路各自读出来的「每个作品是什么样」，供最后交叉对比。 */
+const seenByTarget = { ndjson: new Map(), csv: new Map() };
 const bad = (what) => problems.push(what);
 
 const data = loadCanonical(canonDir);
@@ -85,8 +87,122 @@ for (const mark of data.marks) {
   if (url) byUrl.set(url, mark);
 }
 
-// ── NeoDB ────────────────────────────────────────────────────────────────
-const zipPath = join(outDir, 'neodb', 'neodb-import.zip');
+// ── NeoDB（NDJSON） ──────────────────────────────────────────────────────
+//
+// 这一路最值钱的一条不变式是**引用要能对上**：每一个 `withRegardTo`、每一个
+// `ShelfLog.item`、每一条收藏单成员，都必须在 `catalog.ndjson` 里找得到那个 `id`。
+// 对不上的时候 `import_*` 抛 KeyError、记一条 failed 就过去了——**一条静默
+// 导不进去的记录**，而它在文件里看起来跟别的一模一样。
+const ndPath = join(outDir, 'neodb', 'neodb-ndjson-import.zip');
+if (existsSync(ndPath)) {
+  const files = unzip(readFileSync(ndPath));
+  // 上传页面是按这两个文件名认格式的（`data.html` 里那段 JSZip），
+  // 名字不对就认成「未知格式」，连传都传不上去。
+  for (const need of ['catalog.ndjson', 'journal.ndjson']) {
+    if (!files.has(need)) bad(`NeoDB NDJSON: zip 里没有 ${need}，上传页面认不出格式`);
+  }
+
+  /** 头一行是表头（`parse_header` 要求 `server` 非空），后面才是记录。 */
+  const records = (name) => {
+    const text = files.get(name) ?? '';
+    const lines = text.split('\n').filter(Boolean);
+    if (!lines.length) return [];
+    let header;
+    try { header = JSON.parse(lines[0]); } catch { header = null; }
+    if (!header?.server) bad(`NeoDB NDJSON: ${name} 的第一行不是带 server 的表头`);
+    return lines.slice(1).map((l, i) => {
+      try { return JSON.parse(l); } catch { bad(`NeoDB NDJSON: ${name} 第 ${i + 2} 行不是合法 JSON`); return null; }
+    }).filter(Boolean);
+  };
+
+  const catalog = new Set(records('catalog.ndjson').map((r) => r.id).filter(Boolean));
+  const journal = records('journal.ndjson');
+
+  // `process_journal` 里有 handler 的那些。别的 type 会被记成 skipped——不报错。
+  const KNOWN_TYPES = new Set(['Tag', 'TagMember', 'Rating', 'Comment', 'ShelfMember',
+    'Review', 'Note', 'Collection', 'ShelfLog', 'post', 'Post', 'Article']);
+
+  let marks = 0;
+  const seenItems = new Set();
+  const counts = {};
+  // 记录是按类型分组写的，TagMember / Rating / Comment 排在 ShelfMember **前面**，
+  // 所以这里必须是 upsert，不能假设条目已经建好了。
+  const ndEntry = (u) => {
+    if (!seenByTarget.ndjson.has(u)) seenByTarget.ndjson.set(u, {});
+    return seenByTarget.ndjson.get(u);
+  };
+  for (const r of journal) {
+    counts[r.type] = (counts[r.type] ?? 0) + 1;
+    if (!KNOWN_TYPES.has(r.type)) bad(`NeoDB NDJSON: 记录类型 ${r.type} 导入器不认，会被静默跳过`);
+
+    // 引用检查。注意 ShelfLog 的形状跟别的都不一样：顶层 item，不是 content.withRegardTo。
+    const refs = [];
+    if (r.content?.withRegardTo) refs.push(r.content.withRegardTo);
+    if (r.type === 'ShelfLog') {
+      if (!r.item) bad('NeoDB NDJSON: 有一条 ShelfLog 没有顶层 item');
+      else refs.push(r.item);
+      if (!r.timestamp) bad('NeoDB NDJSON: 有一条 ShelfLog 没有 timestamp——导入器会直接抛错');
+    }
+    for (const m of r.items ?? []) if (m.item) refs.push(m.item);
+    for (const u of refs) if (!catalog.has(u)) bad(`NeoDB NDJSON: ${u} 不在 catalog.ndjson 里，这条记录导不进去`);
+
+    if (r.type === 'ShelfMember') {
+      marks += 1;
+      const url = r.content?.withRegardTo;
+      ndEntry(url).status = r.content?.status;
+      if (seenItems.has(url)) bad(`NeoDB NDJSON: ${url} 有不止一条 ShelfMember`);
+      seenItems.add(url);
+      // `progress` 是三态的，`null` = 清掉用户手工填的进度。我们没有进度可写，
+      // 所以这个键必须**整个不在**。
+      if ('progress' in r) bad(`NeoDB NDJSON: ${url} 写了 progress 键，那会覆盖用户在 NeoDB 上填的进度`);
+      const mark = byUrl.get(url);
+      if (!mark) { bad(`NeoDB NDJSON: ${url} 不在档案里`); continue; }
+      const f = fieldsOf(mark);
+      const want = { wish: 'wishlist', doing: 'progress', done: 'complete' }[f.status] ?? '';
+      if (r.content?.status !== want) bad(`NeoDB NDJSON: ${url} 状态 ${r.content?.status}，档案里是 ${f.status}`);
+    }
+
+    if (r.type === 'Rating') {
+      const v = r.content?.value;
+      ndEntry(r.content?.withRegardTo).rating = v;
+      // 0 分是「删掉评分」，不是「没打分」——`import_rating` 直接把 0 当删除。
+      if (!v || v % 2 !== 0 || v > 10) bad(`NeoDB NDJSON: ${r.content?.withRegardTo} 评分 ${v} 不对（该是 2/4/6/8/10）`);
+      const mark = byUrl.get(r.content?.withRegardTo);
+      if (mark && fieldsOf(mark).rating * 2 !== v) {
+        bad(`NeoDB NDJSON: ${r.content?.withRegardTo} 评分 ${v}，档案里是 ${fieldsOf(mark).rating} 星`);
+      }
+    }
+
+    if (r.type === 'Comment') {
+      ndEntry(r.content?.withRegardTo).comment = r.content?.content;
+      const mark = byUrl.get(r.content?.withRegardTo);
+      if (mark && r.content?.content !== fieldsOf(mark).comment) {
+        bad(`NeoDB NDJSON: ${r.content?.withRegardTo} 的短评跟档案不一致`);
+      }
+    }
+
+    if (r.type === 'TagMember') {
+      const e = ndEntry(r.content?.withRegardTo);
+      (e.tags ??= []).push(r.content?.tag);
+    }
+  }
+
+  // 标签必须走 Tag + TagMember：ShelfMember 上没有标签这一项，
+  // 只出 ShelfMember 的话，标签会一声不吭地全部丢掉。
+  const tagged = data.marks.filter((m) => m.subject?.url && (fieldsOf(m).tags ?? []).length).length;
+  if (tagged && !counts.TagMember) bad(`NeoDB NDJSON: 档案里有 ${tagged} 条标记带标签，产物里一条 TagMember 都没有`);
+
+  const expected = data.marks.filter((m) => m.subject?.url).length;
+  const noLink = data.marks.length - expected;
+  if (!isSample && marks !== expected) bad(`NeoDB NDJSON: ShelfMember ${marks} 条，该有 ${expected} 条`);
+  if (isSample && marks > expected) bad(`NeoDB NDJSON: ShelfMember ${marks} 条，比档案里的 ${expected} 条还多`);
+  notes.push(`NeoDB(nd)  标记 ${marks} 条 · 条目 ${catalog.size} 个 · 记录 ${journal.length} 条 `
+    + `(${Object.entries(counts).map(([k, v]) => `${k} ${v}`).join(' · ')})`
+    + (noLink ? `（另有 ${noLink} 条没有豆瓣链接，在 neodb-needs-check.csv 里）` : ''));
+}
+
+// ── NeoDB（旧的 CSV） ────────────────────────────────────────────────────
+const zipPath = join(outDir, 'neodb_csv', 'neodb-import.zip');
 if (existsSync(zipPath)) {
   const files = unzip(readFileSync(zipPath));
   const KNOWN = ['book', 'movie', 'tv', 'music', 'game', 'podcast', 'performance'];
@@ -107,6 +223,12 @@ if (existsSync(zipPath)) {
       if (!url) { bad('NeoDB: 有一行的 links 是空的，导进去必然失败'); continue; }
       if (seen.has(url)) bad(`NeoDB: ${url} 出现了不止一次`);
       seen.add(url);
+      seenByTarget.csv.set(url, {
+        status: r.status,
+        rating: r.rating === '' ? undefined : Number(r.rating),
+        comment: r.comment === '' ? undefined : r.comment,
+        tags: r.tags === '' ? undefined : r.tags.split('|'),
+      });
 
       const mark = byUrl.get(url);
       if (!mark) { bad(`NeoDB: ${url} 不在档案里`); continue; }
@@ -132,6 +254,34 @@ if (existsSync(zipPath)) {
   if (isSample && rows > expected) bad(`NeoDB: 标记 ${rows} 行，比档案里的 ${expected} 条还多`);
   notes.push(`NeoDB     标记 ${rows} 行 · ${files.size} 张表 · zip 拆得开`
     + (noLink ? `（另有 ${noLink} 条没有豆瓣链接，在 neodb-needs-check.csv 里）` : ''));
+}
+
+// ── NeoDB：两条路互相对一遍 ───────────────────────────────────────────────
+//
+// 两份产物上面都已经各自跟 canonical 对过了，所以这一步不是重复劳动。
+// **CSV 那条路是唯一做过真实往返的**（2026-08-20，41/42 条进去了），
+// 所以它是「已知好的」那一份——NDJSON 跟它不一致的地方，
+// 就是「一个验证过的行为被改掉了」的地方，而这正是换格式最容易出的事故。
+//
+// 只比 CSV 表达得了的东西：豆列、不挂作品的日记、状态历史那三样 CSV 里没有，
+// 不一致是意料之中的，比了反而吵。
+if (seenByTarget.ndjson.size && seenByTarget.csv.size) {
+  const { ndjson, csv } = seenByTarget;
+  const same = (a, b) => JSON.stringify(a ?? null) === JSON.stringify(b ?? null);
+  let compared = 0;
+  for (const [url, c] of csv) {
+    const n = ndjson.get(url);
+    if (!n) { bad(`NeoDB 两路: ${url} 在 CSV 里有，NDJSON 里没有`); continue; }
+    compared += 1;
+    if (c.status !== n.status) bad(`NeoDB 两路: ${url} 状态 CSV=${c.status} NDJSON=${n.status}`);
+    if (c.rating !== n.rating) bad(`NeoDB 两路: ${url} 评分 CSV=${c.rating ?? '(无)'} NDJSON=${n.rating ?? '(无)'}`);
+    if (!same(c.comment, n.comment)) bad(`NeoDB 两路: ${url} 短评不一致`);
+    if (!same(c.tags, n.tags)) bad(`NeoDB 两路: ${url} 标签 CSV=${JSON.stringify(c.tags)} NDJSON=${JSON.stringify(n.tags)}`);
+  }
+  for (const url of ndjson.keys()) {
+    if (!csv.has(url)) bad(`NeoDB 两路: ${url} 在 NDJSON 里有，CSV 里没有`);
+  }
+  notes.push(`NeoDB 两路  ${compared} 个作品逐字段对过（状态 / 评分 / 短评 / 标签）`);
 }
 
 // ── Letterboxd ───────────────────────────────────────────────────────────
