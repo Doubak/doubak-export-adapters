@@ -180,6 +180,10 @@ canonical 里一条标记记的是**一串观测**：哪个版本的解析器、
 
 ## 还没做的
 
+- **还没写 `content.updated`，而这是个会静默出错的缺口。** 上游 2026-08-23 给 NDJSON 加了这个字段，`_is_current` 优先拿它跟目标的 `edited_time` 比。我们一个字没写，于是退回「`created_time` vs `published`」——而豆瓣的 `marked_at` 是**标记那天**，改短评不会动它。所以第一次导完之后，在豆瓣改了短评、重新抓、再导一次：`published` 没变，目标的 `created_time` 等于它，**这次编辑一声不吭地不生效**。
+
+  canonical 恰好能答对：一条 revision 是在**字段摘要变了**的时候才产生的，所以最新那条 revision 的 `first_observed_at` 就是「这份内容最早被看见」的时刻，正是 `updated` 要的语义。用 `last_observed_at` 是错的——每次抓取都会变，等于宣称每条都改过。
+
 - **NDJSON 那一路还没做过真实往返验证。** 离线能证明的只是「产出符合从导入器源码里读出来的格式」，不是「对方真的收」。CSV 那一路验过（下面那条），NDJSON 没有。**状态历史尤其没有**——它是全新的一条路，所以默认关着。
 - **Letterboxd 和 Goodreads 还没做过真实往返验证。** 那两家目前能证明的只是「产出符合读源码/读文档读出来的格式」，不是「对方真的收」。步骤在 [`docs/manual-testing.md`](docs/manual-testing.md)，`--sample=N` 就是为它加的。
 
