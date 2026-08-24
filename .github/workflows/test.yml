@@ -38,18 +38,30 @@ jobs:
 
       # 端到端跑一次：产出必须真的落到磁盘上，而且 zip 要能用系统工具打开。
       # 单测都是在内存里比字符串的，落盘这一段没有别的地方覆盖。
+      #
+      # 四个目标全点名，不用默认的三个：neodb_csv 不在默认里，而校验器的
+      # 「两条路互相对一遍」只有两个目录都在时才会跑——**只跑默认的话，
+      # 那一整段检查在 CI 里等于不存在**。
       - name: 对着样本档案跑一次完整导出
         run: |
-          node bin/export.js test/fixtures/canonical /tmp/export-out
-          unzip -t /tmp/export-out/neodb/neodb-import.zip
+          node bin/export.js test/fixtures/canonical /tmp/export-out \
+            --target=neodb,neodb_csv,letterboxd,goodreads
+          unzip -t /tmp/export-out/neodb/neodb-ndjson-import.zip
+          unzip -t /tmp/export-out/neodb_csv/neodb-import.zip
           ls -R /tmp/export-out
           test -f /tmp/export-out/怎么导入.md
 
       # 校验器是「上传之前跑一次」的那一步，而它自己坏掉的表现是**说全对**。
       # 所以这里既跑它的正路，也确认它在被改坏的产物上真的会失败——
       # 一个永远返回 0 的校验器比没有校验器更糟。
+      #
+      # 顺带确认「两条路互相对一遍」真的跑了：一段从没执行过的检查，
+      # 表现跟一段通过了的检查一模一样。
       - name: 校验器在好的产物上通过
-        run: node tools/check-export.mjs test/fixtures/canonical /tmp/export-out
+        run: |
+          node tools/check-export.mjs test/fixtures/canonical /tmp/export-out | tee /tmp/check.out
+          grep -q 'NeoDB 两路' /tmp/check.out || {
+            echo '::error::NDJSON 跟 CSV 的交叉对比没有跑到'; exit 1; }
 
       - name: 校验器在坏的产物上必须失败
         run: |

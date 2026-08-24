@@ -225,7 +225,10 @@ NeoDB 那边会跳过已经存在的记录（`created_time` 更新的那条赢�
 CSV 原文可以这么取：
 
 ```sh
-unzip -p /tmp/export-sample/neodb/neodb-import.zip movie_mark.csv | grep 34965089
+# NDJSON（默认那一份）：把跟某个作品有关的记录全捞出来
+unzip -p /tmp/export-sample/neodb/neodb-ndjson-import.zip journal.ndjson | grep 34965089
+# 用了 --target=neodb_csv 的话
+unzip -p /tmp/export-sample/neodb_csv/neodb-import.zip movie_mark.csv | grep 34965089
 ```
 
 > 这些文件里有你的短评、标签和豆瓣链接。贴之前留意一下——**定位问题靠的是那一行的形状，不是它的内容**，把评语替换成 `xxx` 完全不影响排查。
