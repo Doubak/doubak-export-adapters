@@ -9,7 +9,7 @@
 ```sh
 node bin/export.js <canonical 目录> [输出目录] [--target=…] [--sample=N] [--shelf-history]
 node tools/check-export.mjs <canonical 目录> <导出目录>   # 上传前离线自查
-npm test    # node --test，零依赖，不需要 npm install（160 个测试）
+npm test    # node --test，零依赖，不需要 npm install（168 个测试）
 ```
 
 `--target` 可选 `neodb`（NDJSON）、`neodb_csv`（旧的 CSV）、`letterboxd`、`goodreads`；
@@ -79,6 +79,20 @@ CSV 那一份没删，只是要显式要。它现在只有两个地方比 NDJSON
 
 - **没有 ISBN / IMDb 的 `info` 兜底。** `parse_catalog` 调的是 `get_item_by_info_and_links("", "", links)`——标题空、info 空，**只靠 URL 匹配**。CSV 那边 `info` 列里的 `isbn:` 还能找回一本豆瓣页面已经没了的书，这边不能。IMDb 有 URL 形式（写进 `external_resources`），ISBN 没有。
 - **上传页面上没有可见性选项。** `data.html` 里检测到 ndjson 就把那三个单选框整个隐藏，于是 `request.POST.get("visibility", 0)` 恒为 0，全部按公开导入。所以这个选择挪进了文件里：`--visibility=1`（仅关注者）/ `2`（仅提及者）。
+
+### `content.updated`：第二次导入能不能认出「你改过了」
+
+上游 2026-08-23 给 NDJSON 加了 `content.updated`，`_is_current` 优先拿它跟目标的 `edited_time` 比，比不出来才退回 `created_time` vs `published`。
+
+**退回去那条路对豆瓣是错的**：`marked_at` 是「标记那天」，改短评根本不动它。所以第一次导完之后，在豆瓣改了短评、重新抓一份、再导一次——`published` 没变，目标的 `created_time` 正好等于它，`_is_current` 判定「目标已经是最新的」，**这次编辑一声不吭地不生效**。
+
+canonical 恰好能答对，而且大概是唯一能答对的：一条 revision 是在**字段摘要变了**的时候才产生的，所以从最新那条往回走、只要摘要没变就继续走，走到头那条的 `first_observed_at` 就是「这份内容最早被看见」的时刻——正是 `updated` 要的语义。**不能用 `last_observed_at`**，它每抓一次就变，等于宣称每条记录每次都被编辑过。
+
+**按字段判，不按整条记录判。** 一条标记的 revision 只要任意字段变了就会新增，拿整条记录的时间当短评的 `updated`，会在只改了评分的时候谎称短评也编辑过。摘要本来就是按字段存的。实测这份档案 8 条多修订的标记里，有 2 条的三个 `updated` 不全相同——比如 `movie/30284835` 只改过短评，于是短评是 8-20 而状态和评分停在 7-31。
+
+只写那七种真的会读它的记录（Collection / ShelfMember / Article / Review / Note / Comment / Rating）。`Tag` / `TagMember` / `ShelfLog` 的 `import_*` 根本不看这个键。
+
+顺带查出来一个真 bug：**豆列的 `published` 原先取的是「最后一次观测」**，而 `import_collection` 认收藏单靠 `(owner, title, created_time)`，`created_time` 就是 `published`。每导一次都变的话，第二次导入认不出第一次那份，会直接新建一个同名收藏单。改成取最早那次——一条豆列被看见过一回之后就再也不会变。
 
 ### 五个静默的坑
 
@@ -179,10 +193,6 @@ canonical 里一条标记记的是**一串观测**：哪个版本的解析器、
 这是对外适配器该有的方向，但反过来是灾难：拿 NeoDB 的形状当储存格式，等于把版本历史、每字段摘要、回指 WARC 的 `capture_ids` 一次性删干净，而且不可逆。
 
 ## 还没做的
-
-- **还没写 `content.updated`，而这是个会静默出错的缺口。** 上游 2026-08-23 给 NDJSON 加了这个字段，`_is_current` 优先拿它跟目标的 `edited_time` 比。我们一个字没写，于是退回「`created_time` vs `published`」——而豆瓣的 `marked_at` 是**标记那天**，改短评不会动它。所以第一次导完之后，在豆瓣改了短评、重新抓、再导一次：`published` 没变，目标的 `created_time` 等于它，**这次编辑一声不吭地不生效**。
-
-  canonical 恰好能答对：一条 revision 是在**字段摘要变了**的时候才产生的，所以最新那条 revision 的 `first_observed_at` 就是「这份内容最早被看见」的时刻，正是 `updated` 要的语义。用 `last_observed_at` 是错的——每次抓取都会变，等于宣称每条都改过。
 
 - **NDJSON 那一路还没做过真实往返验证。** 离线能证明的只是「产出符合从导入器源码里读出来的格式」，不是「对方真的收」。CSV 那一路验过（下面那条），NDJSON 没有。**状态历史尤其没有**——它是全新的一条路，所以默认关着。
 - **Letterboxd 和 Goodreads 还没做过真实往返验证。** 那两家目前能证明的只是「产出符合读源码/读文档读出来的格式」，不是「对方真的收」。步骤在 [`docs/manual-testing.md`](docs/manual-testing.md)，`--sample=N` 就是为它加的。

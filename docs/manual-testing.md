@@ -1,6 +1,6 @@
 # 手工验一遍
 
-`npm test` 有 160 个测试，但它们证明不了这件事最要紧的那一半。
+`npm test` 有 168 个测试，但它们证明不了这件事最要紧的那一半。
 
 测试对着 `test/fixtures/` 里那 18 条真实记录跑，证明的是**代码在那 18 条上是对的**。它证明不了：
 
@@ -141,6 +141,9 @@ node tools/check-export.mjs ~/downloads/20260806-canonical /tmp/export-sample --
       的问题这里不存在——真出现了就是 bug。
 - [ ] **阅读进度**：如果你在 NeoDB 上手工填过「读到第几页」，导入之后**它该还在**。
       没了就说明写了 `progress: null`，停下来开 issue。
+- [ ] **改一条再导一次**：随便挑一条已经导进去的，去豆瓣把短评改几个字，
+      重新抓一份、重新导出、再导一次。NeoDB 上那条短评**应当跟着变**。
+      没变就说明 `content.updated` 那条路没生效——而它不报错，只是不生效。
 
 **`neodb-needs-check.csv` 和 `neodb-doulist-needs-check.csv` 不要上传。** 它跟 zip 放在同一个目录里，但它是给人看的：里面是豆瓣已经删掉、档案里连链接都没留下的条目，NeoDB 无从定位。
 

@@ -38,27 +38,35 @@ const of = (records, type) => records.filter((r) => r.type === type);
 const CONTRACT = {
   Tag: { top: ['name', 'visibility', 'pinned'], content: [] },
   TagMember: { top: ['visibility', 'metadata'], content: ['tag', 'published', 'withRegardTo'] },
-  Rating: { top: ['visibility', 'metadata'], content: ['value', 'published', 'withRegardTo'] },
-  Comment: { top: ['visibility', 'metadata'], content: ['content', 'published', 'withRegardTo'] },
+  Rating: {
+    top: ['visibility', 'metadata'],
+    content: ['value', 'published', 'updated', 'withRegardTo'],
+  },
+  Comment: {
+    top: ['visibility', 'metadata'],
+    content: ['content', 'published', 'updated', 'withRegardTo'],
+  },
   ShelfMember: {
     top: ['visibility', 'metadata', 'progress'],
-    content: ['status', 'published', 'withRegardTo'],
+    content: ['status', 'published', 'updated', 'withRegardTo'],
   },
   Review: {
     top: ['visibility', 'metadata', 'images'],
-    content: ['name', 'content', 'published', 'withRegardTo'],
+    content: ['name', 'content', 'published', 'updated', 'withRegardTo'],
   },
   Note: {
     top: ['visibility', 'metadata', 'attachments'],
-    content: ['title', 'content', 'sensitive', 'progress', 'published', 'withRegardTo'],
+    content: ['title', 'content', 'sensitive', 'progress', 'published', 'updated', 'withRegardTo'],
   },
   Collection: {
     top: ['visibility', 'metadata', 'collaborative', 'query', 'cover', 'items', 'images'],
-    content: ['name', 'content', 'published'],
+    content: ['name', 'content', 'published', 'updated'],
   },
   Article: {
     top: ['visibility', 'metadata', 'cover', 'images'],
-    content: ['name', 'summary', 'sensitive', 'tag', 'source', 'content', 'published'],
+    content: [
+      'name', 'summary', 'sensitive', 'tag', 'source', 'content', 'published', 'updated',
+    ],
   },
   ShelfLog: {
     top: ['item', 'status', 'timestamp', 'metadata', 'posts'],
@@ -766,4 +774,153 @@ test('--sample=1 切出来的那份仍然自洽', () => {
     for (const m of r.items ?? []) assert.ok(ids.has(m.item));
   }
   assert.equal(of(journal(built), 'ShelfMember').length, 1);
+});
+
+// ── content.updated ───────────────────────────────────────────────────────
+//
+// 没有这个键，`_is_current` 退回「`created_time` vs `published`」，而豆瓣的
+// `marked_at` 是标记那天、改短评不动它——于是用户第一次导入之后在豆瓣上做的编辑，
+// 第二次导入会一声不吭地不生效。这一组测的就是它不会。
+
+/** 造一条带多次修订的记录：每个 `fields` 一条 revision，摘要按值算。 */
+function revised(base, states, times) {
+  const digest = (v) => `sha256:${JSON.stringify(v)}`;
+  return {
+    ...base,
+    revisions: states.map((fields, i) => ({
+      parser_version: 'test',
+      first_observed_at: times[i][0],
+      last_observed_at: times[i][1],
+      fields,
+      digests: Object.fromEntries(Object.entries(fields).map(([k, v]) => [k, digest(v)])),
+    })),
+  };
+}
+
+const T1 = ['2026-01-01T00:00:00+08:00', '2026-01-05T00:00:00+08:00'];
+const T2 = ['2026-02-01T00:00:00+08:00', '2026-02-05T00:00:00+08:00'];
+
+test('导入器会读 updated 的那七种记录都写了，别的三种一个都不写', () => {
+  // 读的是 Collection / ShelfMember / Article / Review / Note / Comment / Rating；
+  // Tag / TagMember / ShelfLog 的 import_* 根本不看这个键，写了是噪音。
+  const records = journal(withHistory);
+  const reads = new Set(['ShelfMember', 'Rating', 'Comment', 'Review', 'Note', 'Article', 'Collection']);
+  let checked = 0;
+  for (const r of records) {
+    if (reads.has(r.type)) {
+      assert.ok(r.content.updated, `${r.type} 没写 updated`);
+      checked += 1;
+    } else {
+      assert.ok(!r.content?.updated && !r.updated, `${r.type} 不该写 updated`);
+    }
+  }
+  assert.ok(checked >= 20, `只核了 ${checked} 条`);
+});
+
+test('updated 按字段算：只改了短评，评分的 updated 不跟着动', () => {
+  // 一条标记的 revision 只要任意字段变了就会新增，所以拿整条记录的时间去当
+  // 短评的 updated，会在只改了评分的时候谎称短评也编辑过。摘要是按字段存的。
+  const mark = revised(
+    { medium: 'movie', subject: { id: '1', url: MOVIE.url } },
+    [
+      { status: 'done', marked_at: { iso: '2024-01-01T00:00:00+08:00' }, rating: 4, comment: '第一版' },
+      { status: 'done', marked_at: { iso: '2024-01-01T00:00:00+08:00' }, rating: 4, comment: '改过了' },
+    ],
+    [T1, T2],
+  );
+  const d = tiny({ subjects: [MOVIE] });
+  d.marks = [mark];
+  const records = journal(buildNeodbNdjson(d));
+  const at = (t) => of(records, t)[0].content.updated;
+  assert.equal(at('Comment'), T2[0], '短评变了，updated 该是第二条 revision 的 first_observed_at');
+  assert.equal(at('Rating'), T1[0], '评分没变，updated 该停在第一条');
+  assert.equal(at('ShelfMember'), T1[0], '状态和标记日都没变');
+});
+
+test('updated 用 first_observed_at，不是 last_observed_at', () => {
+  // last_observed_at 每抓一次就变，用它等于宣称每条记录每次都被编辑过：
+  // 每次导入都会把所有东西重写一遍，edited_time 全被推到今天。
+  const mark = revised(
+    { medium: 'movie', subject: { id: '1', url: MOVIE.url } },
+    [{ status: 'done', comment: '没改过' }],
+    [T1],
+  );
+  const d = tiny({ subjects: [MOVIE] });
+  d.marks = [mark];
+  const c = of(journal(buildNeodbNdjson(d)), 'Comment')[0].content;
+  assert.equal(c.updated, T1[0]);
+  assert.notEqual(c.updated, T1[1], 'last_observed_at 是每次抓取都会变的那个');
+});
+
+test('再抓一次但什么都没改，updated 不动', () => {
+  // 幂等：同一条内容被观测第二次不算编辑。动了的话每次导入都会重写一遍。
+  const same = { status: 'done', comment: '一个字没改' };
+  const one = tiny({ subjects: [MOVIE] });
+  one.marks = [revised({ medium: 'movie', subject: { id: '1', url: MOVIE.url } }, [same], [T1])];
+  const two = tiny({ subjects: [MOVIE] });
+  two.marks = [revised({ medium: 'movie', subject: { id: '1', url: MOVIE.url } }, [same, same], [T1, T2])];
+  const get = (d) => of(journal(buildNeodbNdjson(d)), 'Comment')[0].content.updated;
+  assert.equal(get(one), T1[0]);
+  assert.equal(get(two), T1[0], '同样的内容观测两次，不是编辑');
+});
+
+test('在豆瓣改了短评、重新抓一份，updated 会往后走——这就是整件事的意义', () => {
+  // 没有这个键的话：published（marked_at）不变，目标的 created_time 等于它，
+  // _is_current 判定「目标已经是最新的」，这次编辑一声不吭地不生效。
+  const base = { medium: 'movie', subject: { id: '1', url: MOVIE.url } };
+  const marked = { iso: '2024-01-01T00:00:00+08:00' };
+  const before = tiny({ subjects: [MOVIE] });
+  before.marks = [revised(base, [{ status: 'done', marked_at: marked, comment: '第一版' }], [T1])];
+  const after = tiny({ subjects: [MOVIE] });
+  after.marks = [revised(base,
+    [{ status: 'done', marked_at: marked, comment: '第一版' },
+      { status: 'done', marked_at: marked, comment: '改过了' }], [T1, T2])];
+
+  const c1 = of(journal(buildNeodbNdjson(before)), 'Comment')[0].content;
+  const c2 = of(journal(buildNeodbNdjson(after)), 'Comment')[0].content;
+  assert.equal(c1.published, c2.published, 'marked_at 不会因为改短评而变——这正是问题所在');
+  assert.ok(c2.updated > c1.updated, 'updated 必须往后走，否则第二次导入认不出这是编辑');
+});
+
+test('档案里没有摘要时退回比字段值，而不是当成「变过」', () => {
+  // 老的 canonical 可能没有 digests。此时按值比，结论一样；当成变过的话，
+  // 每条记录的 updated 都会跳到最后一次观测。
+  const base = { medium: 'movie', subject: { id: '1', url: MOVIE.url } };
+  const noDigest = (fields, t) => ({
+    parser_version: 'test', first_observed_at: t[0], last_observed_at: t[1], fields,
+  });
+  const d = tiny({ subjects: [MOVIE] });
+  d.marks = [{
+    ...base,
+    revisions: [noDigest({ status: 'done', comment: '一样' }, T1),
+      noDigest({ status: 'done', comment: '一样' }, T2)],
+  }];
+  assert.equal(of(journal(buildNeodbNdjson(d)), 'Comment')[0].content.updated, T1[0]);
+});
+
+test('没有观测时间就不写 updated，而不是编一个', () => {
+  const d = tiny({ subjects: [MOVIE] });
+  d.marks = [{
+    medium: 'movie',
+    subject: { id: '1', url: MOVIE.url },
+    revisions: [{ parser_version: 'test', fields: { status: 'done', comment: 'x' }, digests: {} }],
+  }];
+  const c = of(journal(buildNeodbNdjson(d)), 'Comment')[0].content;
+  assert.ok(!('updated' in c));
+});
+
+test('豆列的 published 用最早那次观测，再抓一次也不动', () => {
+  // import_collection 认收藏单靠 (owner, title, created_time)，而 created_time
+  // 就是 published。用最后一次观测的话每导一次都变，第二次导入会新建一个同名的。
+  const items = [];
+  const one = tiny({ subjects: [MOVIE] });
+  one.marks = [];
+  one.doulists = [revised({}, [{ title: '单子', visibility: 'public', items }], [T1])];
+  const two = tiny({ subjects: [MOVIE] });
+  two.marks = [];
+  two.doulists = [revised({}, [{ title: '单子', visibility: 'public', items },
+    { title: '单子', visibility: 'public', items }], [T1, T2])];
+  const pub = (d) => of(journal(buildNeodbNdjson(d)), 'Collection')[0].content.published;
+  assert.equal(pub(one), T1[0]);
+  assert.equal(pub(two), T1[0], '再抓一次不该改变收藏单的身份');
 });

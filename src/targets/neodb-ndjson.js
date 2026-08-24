@@ -267,6 +267,7 @@ export function buildNeodbNdjson(data, options = {}) {
         type: 'Status',
         status: shelf,
         published,
+        updated: changedAt(mark, ['status', 'marked_at']),
         withRegardTo: item,
       },
       // `progress` 故意不写。它是三态的，`null` 是「清掉已有进度」——
@@ -285,7 +286,15 @@ export function buildNeodbNdjson(data, options = {}) {
         metadata: {},
         // 豆瓣 1–5 星 → NeoDB 1–10 分。**永远不写 0**：「没打分」和「打了 0 分」
         // 是两件事，而且 `import_rating` 把 0 当成删除评分。
-        content: { type: 'Rating', best: 10, worst: 1, value: f.rating * 2, published, withRegardTo: item },
+        content: {
+          type: 'Rating',
+          best: 10,
+          worst: 1,
+          value: f.rating * 2,
+          published,
+          updated: changedAt(mark, ['rating']),
+          withRegardTo: item,
+        },
       }));
       report.ratings += 1;
     }
@@ -295,7 +304,13 @@ export function buildNeodbNdjson(data, options = {}) {
         type: 'Comment',
         visibility: vis,
         metadata: {},
-        content: { type: 'Comment', content: f.comment, published, withRegardTo: item },
+        content: {
+          type: 'Comment',
+          content: f.comment,
+          published,
+          updated: changedAt(mark, ['comment']),
+          withRegardTo: item,
+        },
       }));
       report.comments += 1;
     }
@@ -359,6 +374,7 @@ export function buildNeodbNdjson(data, options = {}) {
           // 所以走 `source`；`import_article` 只在没有 source 的时候才退回 content。
           source: { content: f.body ?? '', mediaType: 'text/markdown' },
           published,
+          updated: changedAt(piece, ['title', 'body']),
         },
       }));
       report.articles += 1;
@@ -386,6 +402,7 @@ export function buildNeodbNdjson(data, options = {}) {
           content: f.body ?? '',
           mediaType: 'text/markdown',
           published,
+          updated: changedAt(piece, ['title', 'body']),
           withRegardTo: item,
         },
       }));
@@ -401,6 +418,7 @@ export function buildNeodbNdjson(data, options = {}) {
           content: f.body ?? '',
           sensitive: false,
           published,
+          updated: changedAt(piece, ['title', 'body']),
           withRegardTo: item,
           // progress 同样不写：豆瓣不记「读到第几页」，编一个出来就是无中生有。
         },
@@ -461,7 +479,8 @@ export function buildNeodbNdjson(data, options = {}) {
       content: {
         name: f.title ?? '',
         content: f.description ?? '',
-        published: latestObservedAt(doulist),
+        published: firstObservedAt(doulist),
+        updated: changedAt(doulist, ['title', 'description', 'items']),
       },
       items,
     }));
@@ -612,15 +631,76 @@ function resolveDoulistEntry(entry, { byUrl, byId }) {
   return null;
 }
 
+
 /**
- * 一条记录最后一次被看见的时间。豆列没有「创建时间」这个字段——豆瓣页面上不给，
- * 所以拿观测时间当 `published`，而不是编一个。
- * @param {{revisions?: {last_observed_at?: string}[]}} record
+ * 这条记录的**这几个字段**最后一次变成现在这个样子，是什么时候。
+ *
+ * ## 为什么要有这个东西
+ *
+ * 上游 2026-08-23 给 NDJSON 加了 `content.updated`，`_is_current` 优先拿它跟目标的
+ * `edited_time` 比，比不出来才退回 `created_time` vs `published`。
+ *
+ * 退回去那条路对豆瓣是**错的**：`marked_at` 是「标记那天」，改短评根本不动它。
+ * 于是第一次导完之后，用户在豆瓣上改了短评、重新抓一份、再导一次——`published`
+ * 没变，目标的 `created_time` 正好等于它，`_is_current` 判定「目标已经是最新的」，
+ * **这次编辑一声不吭地不生效**。
+ *
+ * ## canonical 恰好能答对，而且是唯一能答对的
+ *
+ * 一条 revision 是在**字段摘要变了**的时候才产生的。所以从最新那条往回走，只要这几个
+ * 字段的摘要跟最新一致就继续走，走到头那条的 `first_observed_at`，就是「这份内容最早
+ * 被看见」的时刻——正是 `updated` 要的语义。
+ *
+ * **不能用 `last_observed_at`**：它每抓一次就变，等于宣称每条记录每次都被编辑过，
+ * 于是每次导入都把所有东西重写一遍，`edited_time` 全被推到今天。
+ *
+ * 按字段而不是按整条记录来判，也是有代价才这么做的：一条标记的 revision 只要任意字段
+ * 变了就会新增，所以拿整条记录的时间去当短评的 `updated`，会在只改了评分的时候
+ * **谎称短评也编辑过**。摘要是按字段存的，这个精度不用白不用。
+ *
+ * @param {{revisions?: object[]}} record
+ * @param {string[]} fields 这条产出记录真正携带的字段
+ * @returns {string|undefined} ISO 时间；档案里没有摘要/时间时返回 undefined（那就不写这个键）
  */
-function latestObservedAt(record) {
+function changedAt(record, fields) {
+  const revs = [...(record?.revisions ?? [])]
+    .sort((a, b) => (a.last_observed_at ?? '').localeCompare(b.last_observed_at ?? ''));
+  if (revs.length === 0) return undefined;
+
+  /** 一个字段在某条 revision 里的指纹。没有摘要就退回字段值本身。 */
+  const sig = (rev, f) => (rev.digests?.[f] !== undefined
+    ? `d:${JSON.stringify(rev.digests[f])}`
+    : `v:${JSON.stringify(rev.fields?.[f] ?? null)}`);
+
+  const latest = revs[revs.length - 1];
+  let start = latest;
+  for (let i = revs.length - 2; i >= 0; i -= 1) {
+    if (!fields.every((f) => sig(revs[i], f) === sig(latest, f))) break;
+    start = revs[i];
+  }
+  return start.first_observed_at ?? undefined;
+}
+
+/** 长文和豆列的 `published`：没有就整个不写，不编一个。 */
+/**
+ * 一条记录**最早**被看见的时间。
+ *
+ * 豆列没有「创建时间」这个字段——豆瓣页面上不给——所以拿观测时间当 `published`，
+ * 而不是编一个。用最早那次，不用最晚那次，理由是硬的：
+ *
+ * `import_collection` 认收藏单靠的是 `(owner, title, created_time)`
+ * （它自己的 TODO 里就写着这一条），而 `created_time` 就是这里的 `published`。
+ * 拿「最后一次观测」当它，**每导一次都会变**，于是第二次导入认不出第一次那份，
+ * 直接新建一个同名收藏单。最早那次是钉死的：一条豆列被看见过一回之后，
+ * 它就再也不会变了。
+ *
+ * @param {{revisions?: {first_observed_at?: string}[]}} record
+ */
+function firstObservedAt(record) {
   let best;
   for (const r of record.revisions ?? []) {
-    if (!best || (r.last_observed_at ?? '') > best) best = r.last_observed_at;
+    const at = r.first_observed_at;
+    if (at && (!best || at < best)) best = at;
   }
   return best ?? undefined;
 }
