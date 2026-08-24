@@ -187,6 +187,29 @@ if (existsSync(ndPath)) {
     }
   }
 
+  // 状态历史不能跟标记自己那件事撞成两行。NeoDB 那边 `import_shelf_member` 会
+  // 顺手建一条 (owner, shelf_type, item, created_time) 的 ShelfLogEntry；豆瓣的
+  // marked_at 只有日期，广播带真实时刻，两者不等就是同一件事两行——而且 00:00
+  // 跟当晚 22:38 渲染到别的时区还会落在两个日期上。要么写成标记那个时间戳并进
+  // 那一行，要么就别写。
+  {
+    const markStamp = new Map();
+    for (const r of journal) {
+      if (r.type === 'ShelfMember' && r.content?.published) {
+        markStamp.set(r.content.withRegardTo, { status: r.content.status, at: r.content.published });
+      }
+    }
+    for (const r of journal) {
+      if (r.type !== 'ShelfLog') continue;
+      const m = markStamp.get(r.item);
+      if (!m || m.status !== r.status) continue;
+      if (r.timestamp?.slice(0, 10) !== m.at.slice(0, 10)) continue;
+      if (r.timestamp !== m.at) {
+        bad(`NeoDB NDJSON: ${r.item} 的 ${r.status} 历史是 ${r.timestamp}，标记是 ${m.at}，同一件事会变成两行`);
+      }
+    }
+  }
+
   // 标签必须走 Tag + TagMember：ShelfMember 上没有标签这一项，
   // 只出 ShelfMember 的话，标签会一声不吭地全部丢掉。
   const tagged = data.marks.filter((m) => m.subject?.url && (fieldsOf(m).tags ?? []).length).length;

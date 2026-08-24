@@ -13,7 +13,7 @@
  *
  *   豆列 → Collection          CSV 没有这一档            6 份、134 条
  *   不挂作品的日记 → Article    CSV 的笔记必须挂条目       5 篇长文里的 3 篇
- *   状态历史 → ShelfLog        CSV 一条记录只有一行       3174 条带日期的事件
+ *   状态历史 → ShelfLog        CSV 一条记录只有一行       2519 条带日期的事件
  *   每条记录各自的可见性        CSV 只有一个全局设置       1 份私密豆列
  *
  * 最后一样才是真正要紧的：豆瓣只存当前状态，**但广播是发出去那一刻就冻住的**，
@@ -161,6 +161,8 @@ export function buildNeodbNdjson(data, options = {}) {
     collectionItems: 0,
     emptyCollections: 0, // 整份豆列一条都没剩下（里面全是评论/小组之类）
     shelfLogs: 0,
+    shelfLogsMerged: 0, // 跟标记自己那条事件是同一件事，并进那一行而不是另开一行
+    shelfLogsMergedEmpty: 0, // 同上，但广播什么都没冻住，那一行整个不写
     catalogItems: 0,
     noLink: 0, // 作品在豆瓣被删掉，canonical 里连 URL 都没有
     noDetailPage: 0, // 没读到详情页，电影/剧集分不开，按电影处理
@@ -274,7 +276,11 @@ export function buildNeodbNdjson(data, options = {}) {
       // 豆瓣不记进度，我们无话可说，那就一个字都别说。
     }));
     report.marks += 1;
-    markedItems.set(`${mark.medium}:${mark.subject?.id}`, item);
+    // 状态历史那边要认出「哪条广播就是标记自己那条事件」，所以连状态、日期，
+    // 还有标记当前的星和短评一起记——并行时要拿它们垫底，见下面 `mergedMeta`。
+    markedItems.set(`${mark.medium}:${mark.subject?.id}`, {
+      item, shelf, published, rating: f.rating ? f.rating * 2 : undefined, comment: f.comment ?? undefined,
+    });
 
     const cat = report.byCategory[category] ?? (report.byCategory[category] = { marks: 0 });
     cat.marks += 1;
@@ -494,38 +500,102 @@ export function buildNeodbNdjson(data, options = {}) {
     // 只给 zip 里真的有标记的作品写历史。既是为了 `--sample` 切出来的那份还是
     // 自洽的（`sample()` 不削广播），也是因为**给一个不在这份导出里的作品写历史
     // 是没有意义的**——导入时它连条目都定位不到。
+    //
+    // ## 标记自己就会生成一条历史，别跟它撞车
+    //
+    // `import_shelf_member` 走的是 `Mark.update`，里面 `ensure_log_entry()` 按
+    // (owner, shelf_type, item, created_time) 建一条 ShelfLogEntry，
+    // `_update_log_entry` 再把标记**当前**的短评和评分写进那条的 metadata。
+    // 也就是说「作品现在这个状态」这个事件，NeoDB 那边本来就有一行。
+    //
+    // 而豆瓣的 marked_at **只有日期**（实测 2942 条全是 +08:00 的 00:00:00），
+    // 广播带的是真实时刻，两者永远不相等；ShelfLogEntry 的唯一键里带 timestamp，
+    // 于是同一件事在页面上排成两行。实测 40 条样本的 54 条历史里有 38 条是这样。
+    //
+    // 更难看的是**跨天**：00:00+08:00 和当天 22:38+08:00 渲染到 +10 的时区就成了
+    // 两个日期，读起来像「隔天又标了一次」。
+    //
+    // 所以对得上标记那条的广播**不另开一行**，而是写成标记那个时间戳，让
+    // `import_shelf_log` 的 update_or_create 正好落到同一行上，把广播冻住的那颗星
+    // 和那段短评补进去（`import_funcs` 里 ShelfLog 排在 ShelfMember 后面，所以
+    // 补得进去）。结果是一件事一行，而且那一行是**当时**那份快照。
     const seen = new Set();
+    /** `item|status` → 并进标记那一行的广播，同一件事有多条时取最晚的。 */
+    const merged = new Map();
+
     for (const b of data.broadcasts) {
       const f = fieldsOf(b);
       if (!f.status || !SHELF[f.status]) continue;
       const medium = BROADCAST_MEDIUM[f.target_type];
       if (!medium) continue; // doulist / sns / ilmen…——不是作品
-      const item = markedItems.get(`${medium}:${f.target_id}`);
-      if (!item) continue;
+      const mark = markedItems.get(`${medium}:${f.target_id}`);
+      if (!mark) continue;
       const timestamp = f.posted_at?.iso;
       if (!timestamp) continue;
-
-      // `import_shelf_log` 是按 (owner, item, shelf_type, timestamp) 做
-      // update_or_create 的，重复本来无害；这边照样先去重，产出干净一点。
-      const key = `${item}|${SHELF[f.status]}|${timestamp}`;
-      if (seen.has(key)) continue;
-      seen.add(key);
+      const status = SHELF[f.status];
 
       const metadata = {};
       // 广播是**发出去那一刻冻住的**，所以这颗星是「你那天打的分」，
       // 跟标记上那颗（豆瓣每次编辑都覆盖、不留历史）不是同一件事。
       if (f.rating) metadata.rating_grade = f.rating * 2;
-      if (f.text) metadata.comment_text = f.text;
+      // 被豆瓣截断的正文不写。并进标记那一行时 `defaults` 是**覆盖**语义，
+      // 拿一段「…（全文）」去换标记刚写进去的完整短评是净亏。实测这份档案里
+      // 带状态的广播 0 条截断，这一条是给别人的档案留的。
+      if (f.text && !f.text_truncated) metadata.comment_text = f.text;
+
+      // 是不是标记自己那条事件：同状态 + 同一天。两边都是 +08:00 的字符串，
+      // 切前 10 位比就够，不用碰时区。
+      const sameEvent = status === mark.shelf && mark.published
+        && timestamp.slice(0, 10) === mark.published.slice(0, 10);
+      if (sameEvent) {
+        const key = `${mark.item}|${status}`;
+        const prev = merged.get(key);
+        if (!prev || prev.at < timestamp) {
+          merged.set(key, { at: timestamp, item: mark.item, status, timestamp: mark.published, frozen: metadata, mark });
+        }
+        continue;
+      }
+
+      // `import_shelf_log` 是按 (owner, item, shelf_type, timestamp) 做
+      // update_or_create 的，重复本来无害；这边照样先去重，产出干净一点。
+      const key = `${mark.item}|${status}|${timestamp}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
 
       shelfLogsOut.push(line({
         // 注意形状：顶层的 item / status / timestamp。
         // 其他每一种记录都是 content.withRegardTo / content.published。
         type: 'ShelfLog',
-        item,
-        status: SHELF[f.status],
+        item: mark.item,
+        status,
         timestamp,
         metadata,
         // `posts` 不写：上游的 import_post 是空函数。
+      }));
+      report.shelfLogs += 1;
+    }
+
+    for (const ev of merged.values()) {
+      // 什么都没冻住就整条不写。那一行 NeoDB 已经有了，而且比我们全：
+      // 少写一行不会丢东西，写一行空的会——见下面 `defaults` 是覆盖语义。
+      if (Object.keys(ev.frozen).length === 0) { report.shelfLogsMergedEmpty += 1; continue; }
+      report.shelfLogsMerged += 1;
+
+      // **`defaults={"metadata": …}` 是整块覆盖，不是合并。** 所以只带一颗星的
+      // 广播并上去，会把 `_update_log_entry` 刚写进那一行的短评一起抹掉。
+      // 拿标记当前的值垫底、广播冻住的值盖在上面：结果正好是「NeoDB 本来会写的
+      // 那一行，加上广播替它记住的那一刻」，两边都不丢。
+      const metadata = {};
+      if (ev.mark.rating !== undefined) metadata.rating_grade = ev.mark.rating;
+      if (ev.mark.comment !== undefined) metadata.comment_text = ev.mark.comment;
+      Object.assign(metadata, ev.frozen);
+
+      shelfLogsOut.push(line({
+        type: 'ShelfLog',
+        item: ev.item,
+        status: ev.status,
+        timestamp: ev.timestamp, // 标记的时间戳，不是广播的——这就是「并进去」
+        metadata,
       }));
       report.shelfLogs += 1;
     }

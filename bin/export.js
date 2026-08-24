@@ -132,6 +132,15 @@ if (wanted.includes('neodb')) {
     + ` · 不挂作品的日记 ${n(report.articles)} 篇 · 条目 ${n(report.catalogItems)} 个`);
   if (shelfHistory) {
     say(`  状态历史 ${n(report.shelfLogs)} 条（从广播还原，豆瓣自己已经不显示了）`);
+    // NeoDB 导标记时自己会建一条历史，所以「标记本身那件事」不另开一行，而是并到
+    // 那一行上、顺手补进当时那颗星和那段短评。不说的话产出比广播数少，看着像漏了。
+    if (report.shelfLogsMerged || report.shelfLogsMergedEmpty) {
+      say(`  · 其中 ${n(report.shelfLogsMerged)} 条是并进标记那一行的（标记本身那件事，`
+        + `NeoDB 导标记时自己就会建一行，我们只把当时的星和短评补上去）`);
+    }
+    if (report.shelfLogsMergedEmpty) {
+      say(`  · 另有 ${n(report.shelfLogsMergedEmpty)} 条广播什么都没冻住（没星也没字），整条略过`);
+    }
   } else if (data.broadcasts.length) {
     say(`  · 状态历史没有带上。加 --shelf-history 可以从 ${n(data.broadcasts.length)} 条广播里还原`
       + '出一条带日期的时间线');

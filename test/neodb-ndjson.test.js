@@ -697,6 +697,133 @@ test('没打分的广播不写 rating_grade，而不是写 0', () => {
   assert.deepEqual(log.metadata, {});
 });
 
+// ---- 标记自己就会生成一条历史 ---------------------------------------------
+//
+// `import_shelf_member` 走 `Mark.update`，里面 `ensure_log_entry()` 按
+// (owner, shelf_type, item, created_time) 自己建一条 ShelfLogEntry，
+// `_update_log_entry` 再把标记**当前**的星和短评写进那一行。所以「作品现在这个
+// 状态」这件事，NeoDB 本来就有一行。
+//
+// 豆瓣的 marked_at 只有日期（实测 2942 条全是 +08:00 的 00:00:00），广播带的是
+// 真实时刻，两者永远不相等，而 ShelfLogEntry 的唯一键里有 timestamp——于是同一
+// 件事排成两行。实测 40 条样本的 54 条历史里 38 条是这样，全量 3174 条里 2345 条。
+// 这是真的导进 neodb.social 之后一眼看出来的，本地任何测试都进不去那个上下文。
+
+const DAY = '2024-03-05';
+const markedThatDay = (extra = {}) => markOn({ status: 'done', marked_at: { iso: `${DAY}T00:00:00+08:00` }, ...extra });
+const cast = (fields) => ({ fields: { target_type: 'movie', target_id: '1', ...fields } });
+const logsOf = (d) => of(journal(buildNeodbNdjson(d, { shelfHistory: true })), 'ShelfLog');
+
+test('标记当天那个状态的广播并进标记那一行，不另开一行', () => {
+  const logs = logsOf(tiny({
+    subjects: [MOVIE],
+    marks: [markedThatDay()],
+    broadcasts: [cast({ status: 'done', text: '看了', posted_at: { iso: `${DAY}T22:38:00+08:00` } })],
+  }));
+  assert.equal(logs.length, 1);
+  // 写成标记那个时间戳，才会落到 update_or_create 的同一行上。写广播的真实时刻
+  // 就是第二行——**而且 00:00+08:00 跟当天 22:38+08:00 渲染到 +10 的时区还会
+  // 变成两个日期**，读起来像隔天又标了一次。
+  assert.equal(logs[0].timestamp, `${DAY}T00:00:00+08:00`);
+  assert.equal(logs[0].metadata.comment_text, '看了');
+});
+
+test('并进去的是广播冻住的那一版，不是标记现在这一版', () => {
+  // 归档的全部意义所在：豆瓣只留最后一版，广播留着当天那一版。
+  const logs = logsOf(tiny({
+    subjects: [MOVIE],
+    marks: [markedThatDay({ comment: '改过之后的短评', rating: 3 })],
+    broadcasts: [cast({ status: 'done', text: '当天写的短评', rating: 5, posted_at: { iso: `${DAY}T22:38:00+08:00` } })],
+  }));
+  assert.equal(logs.length, 1);
+  assert.equal(logs[0].metadata.comment_text, '当天写的短评');
+  assert.equal(logs[0].metadata.rating_grade, 10);
+});
+
+test('广播只冻住了星，并上去也不会把标记的短评抹掉', () => {
+  // `update_or_create(defaults={"metadata": …})` 是**整块覆盖**，不是合并。
+  // 只写 rating_grade 过去，`_update_log_entry` 刚写进那一行的短评就没了。
+  const logs = logsOf(tiny({
+    subjects: [MOVIE],
+    marks: [markedThatDay({ comment: '标记上的短评', rating: 3 })],
+    broadcasts: [cast({ status: 'done', rating: 5, text: null, posted_at: { iso: `${DAY}T22:38:00+08:00` } })],
+  }));
+  assert.equal(logs[0].metadata.rating_grade, 10, '星用广播冻住的');
+  assert.equal(logs[0].metadata.comment_text, '标记上的短评', '短评保持 NeoDB 本来会写的那份');
+});
+
+test('广播什么都没冻住，那一条整个不写——写个空的过去等于把标记的短评抹掉', () => {
+  const d = tiny({
+    subjects: [MOVIE],
+    marks: [markedThatDay({ comment: '标记上的短评' })],
+    broadcasts: [cast({ status: 'done', rating: null, text: null, posted_at: { iso: `${DAY}T22:38:00+08:00` } })],
+  });
+  assert.equal(logsOf(d).length, 0);
+  assert.equal(buildNeodbNdjson(d, { shelfHistory: true }).report.shelfLogsMergedEmpty, 1);
+});
+
+test('被豆瓣截断的正文不并进去——拿半句换整句是净亏', () => {
+  const bc = (extra) => cast({ status: 'done', text: '完整的一长段', text_truncated: true, posted_at: { iso: `${DAY}T22:38:00+08:00` }, ...extra });
+  const mark = markedThatDay({ comment: '完整的一长段短评' });
+
+  // 还冻住了一颗星，所以那一行仍要写——短评保持标记上的完整那份。
+  const logs = logsOf(tiny({ subjects: [MOVIE], marks: [mark], broadcasts: [bc({ rating: 5 })] }));
+  assert.equal(logs[0].metadata.comment_text, '完整的一长段短评');
+  assert.equal(logs[0].metadata.rating_grade, 10);
+
+  // 只有一段截断的正文 = 什么都没冻住，那一行整个不写。
+  assert.equal(logsOf(tiny({ subjects: [MOVIE], marks: [mark], broadcasts: [bc({})] })).length, 0);
+});
+
+test('换了状态、或者换了一天的广播照样是独立一行，用广播自己的时刻', () => {
+  const logs = logsOf(tiny({
+    subjects: [MOVIE],
+    marks: [markedThatDay()],
+    broadcasts: [
+      cast({ status: 'wish', posted_at: { iso: `${DAY}T09:00:00+08:00` } }), // 同一天，别的状态
+      cast({ status: 'done', posted_at: { iso: '2023-01-01T09:00:00+08:00' } }), // 同状态，别的年份：重看
+      cast({ status: 'done', text: '当天', posted_at: { iso: `${DAY}T22:38:00+08:00` } }), // 这条才是标记那件事
+    ],
+  }));
+  assert.equal(logs.length, 3);
+  const byStamp = Object.fromEntries(logs.map((l) => [l.timestamp, l.status]));
+  assert.equal(byStamp[`${DAY}T09:00:00+08:00`], 'wishlist');
+  assert.equal(byStamp['2023-01-01T09:00:00+08:00'], 'complete');
+  assert.equal(byStamp[`${DAY}T00:00:00+08:00`], 'complete');
+});
+
+test('同一天同一状态有好几条广播，取最晚那条并上去', () => {
+  const logs = logsOf(tiny({
+    subjects: [MOVIE],
+    marks: [markedThatDay()],
+    broadcasts: [
+      cast({ status: 'done', text: '早上写的', posted_at: { iso: `${DAY}T09:00:00+08:00` } }),
+      cast({ status: 'done', text: '晚上改的', posted_at: { iso: `${DAY}T22:38:00+08:00` } }),
+    ],
+  }));
+  assert.equal(logs.length, 1);
+  assert.equal(logs[0].metadata.comment_text, '晚上改的');
+});
+
+test('整份档案里没有一条历史会跟标记那件事撞成两行', () => {
+  // 上面每条都是构造出来的；这一条是对着真档案的横扫，防的是「换个写法又漏一类」。
+  const marks = new Map();
+  for (const r of journal(withHistory)) {
+    if (r.type === 'ShelfMember') marks.set(r.content.withRegardTo, r.content);
+  }
+  let checked = 0;
+  for (const l of of(journal(withHistory), 'ShelfLog')) {
+    const m = marks.get(l.item);
+    if (!m?.published) continue;
+    if (l.status !== m.status) continue;
+    if (l.timestamp.slice(0, 10) !== m.published.slice(0, 10)) continue;
+    checked += 1;
+    assert.equal(l.timestamp, m.published,
+      `${l.item} 的 ${l.status} 跟标记同一天却不是同一个时间戳，导进去会是两行`);
+  }
+  assert.ok(checked > 0, '样本里该有并进标记那一行的历史，一条都没扫到说明这个检查空转了');
+});
+
 test('没有广播的档案开着 --shelf-history 也不炸', () => {
   const d = tiny({ subjects: [MOVIE], marks: [markOn({ status: 'done' })] });
   const built = buildNeodbNdjson(d, { shelfHistory: true });
