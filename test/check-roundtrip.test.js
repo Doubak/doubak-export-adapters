@@ -74,14 +74,22 @@ function asServerExport(ourZip) {
     outJournal.push(rec);
   }
 
+  // 档案里没有标记日期的那几条，我们整个不写 `published`，服务器于是拿
+  // 导入那一刻当日期。实测全量 2943 条里有 8 条走这条路。
+  const IMPORTED_AT = '2026-08-25 08:49:46+00:00';
+  for (const rec of outJournal) {
+    if (rec.type === 'ShelfMember' && !rec.content.published) rec.content.published = IMPORTED_AT;
+  }
+
   // 导标记时顺带生成的那一行。已经有同键的行就不重复建——`get_or_create`。
   const have = new Set(outJournal.filter((d) => d.type === 'ShelfLog').map((d) => `${d.item}|${d.status}|${d.timestamp}`));
   const rating = new Map(journal.filter((d) => d.type === 'Rating').map((d) => [d.content.withRegardTo, d.content.value]));
   const comment = new Map(journal.filter((d) => d.type === 'Comment').map((d) => [d.content.withRegardTo, d.content.content]));
   for (const d of journal) {
-    if (d.type !== 'ShelfMember' || !d.content.published) continue;
+    if (d.type !== 'ShelfMember') continue;
     const it = theirId(d.content.withRegardTo);
-    const ts = utc(d.content.published);
+    // 没有 `published` 的那几条，服务器建行用的也是它自己填的那个导入时刻。
+    const ts = d.content.published ? utc(d.content.published) : IMPORTED_AT;
     if (have.has(`${it}|${d.content.status}|${ts}`)) continue;
     const metadata = {};
     if (rating.has(d.content.withRegardTo)) metadata.rating_grade = rating.get(d.content.withRegardTo);
@@ -133,6 +141,10 @@ test('原样存住的那份，校验器说全对', () => {
   assert.match(out, /标记\s+我们\s+1[0-9] 条/);
   assert.match(out, /状态历史\s+我们\s+2[0-9] 条/);
   assert.match(out, /多出来的 \d+ 条都对得上标记本身那件事/);
+  // 没有标记日期的那几条只报一行说明，不算错。样本里正好有 1 条——
+  // 断言它出现过，否则这条路等于没测：真实全量里是 8 条，
+  // 而**一个永远有内容的失败清单就是一个没人看的失败清单**。
+  assert.match(out, /其中 1 条档案里没有标记日期/);
 });
 
 test('同一件事被写成两行就抓得住——这正是 2026-08-24 那个 bug', () => {

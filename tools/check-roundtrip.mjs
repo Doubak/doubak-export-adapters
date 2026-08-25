@@ -146,7 +146,7 @@ const vis = (d) => d.visibility ?? 0;
  * @param {any[]} a 我们的
  * @param {any[]} b 服务器的
  * @param {(d: any) => string} key 同一条记录在两边算出来要一样
- * @param {(d: any) => Record<string, unknown>} val 要逐字比的字段
+ * @param {(d: any, k: string) => Record<string, unknown>} val 要逐字比的字段
  */
 function compare(label, a, b, key, val) {
   const A = new Map(a.map((d) => [key(d), d]));
@@ -155,8 +155,8 @@ function compare(label, a, b, key, val) {
   for (const [k, d] of A) {
     const o = B.get(k);
     if (!o) { bad(`${label}：我们送了 ${k}，服务器上没有`); continue; }
-    const x = JSON.stringify(val(d));
-    const y = JSON.stringify(val(o));
+    const x = JSON.stringify(val(d, k));
+    const y = JSON.stringify(val(o, k));
     if (x !== y) {
       bad(`${label}：${k} 存进去变了样`);
       bad(`  我们  ${x.slice(0, 200)}`);
@@ -171,9 +171,24 @@ function compare(label, a, b, key, val) {
   return { extra: extra.map((k) => B.get(k)) };
 }
 
+// 档案里有些标记根本没有日期（豆瓣那一行就没写），我们**故意不写 `published`**——
+// 编一个日期出来是替用户宣称他那天标记过。服务器于是拿导入那一刻当日期，
+// 所以这几条的日期一定对不上，而且这不是错。实测全量 2943 条里有 8 条。
+//
+// 这类「一定会报、又永远修不掉」的条目必须挪出错误列表：**一个永远有内容的
+// 失败清单，就是一个没人看的失败清单。** 8 条足够盖住第 9 条真的问题。
+const undated = new Set(of(ours, 'ShelfMember')
+  .filter((d) => !d.content.published)
+  .map((d) => `${d.content.withRegardTo} ${d.content.status}`));
+
 compare('标记', of(ours, 'ShelfMember'), of(theirs, 'ShelfMember'),
   (d) => `${item(d)} ${d.content.status}`,
-  (d) => ({ published: at(d.content.published), visibility: vis(d) }));
+  (d, k) => (undated.has(k)
+    ? { visibility: vis(d) }
+    : { published: at(d.content.published), visibility: vis(d) }));
+if (undated.size) {
+  notes.push(`${pad('', 16)}      其中 ${undated.size} 条档案里没有标记日期，服务器拿导入那一刻当日期（不比日期）`);
+}
 
 compare('评分', of(ours, 'Rating'), of(theirs, 'Rating'),
   (d) => item(d), (d) => ({ value: d.content.value, visibility: vis(d) }));
@@ -234,6 +249,12 @@ compare('不挂作品的日记', of(ours, 'Article'), of(theirs, 'Article'),
   const marks = new Map();
   for (const d of of(ours, 'ShelfMember')) {
     marks.set(`${item(d)} ${d.content.status}`, at(d.content.published));
+  }
+  // 没有标记日期那几条，服务器是拿导入那一刻当日期建的行，所以「标记本身那件事」
+  // 的时间戳只有服务器知道。拿它那一份补上，否则这几行会被当成解释不了的多余行。
+  for (const d of of(theirs, 'ShelfMember')) {
+    const k = `${item(d)} ${d.content.status}`;
+    if (undated.has(k)) marks.set(k, at(d.content.published));
   }
   const A = new Map();
   for (const d of of(ours, 'ShelfLog')) A.set(`${item(d)} ${d.status} ${at(d.timestamp)}`, d);
