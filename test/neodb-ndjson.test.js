@@ -7,7 +7,9 @@ import { sample } from '../src/sample.js';
 import { FIXTURE, fileNamed, parseCsvObjects } from './helpers.js';
 
 const data = loadCanonical(FIXTURE);
-const plain = buildNeodbNdjson(data);
+// 默认**带**状态历史，所以「不带」得显式说。这一行以前是 `buildNeodbNdjson(data)`，
+// 默认翻过来之后它就不再是「不带」的那一份了。
+const plain = buildNeodbNdjson(data, { shelfHistory: false });
 const withHistory = buildNeodbNdjson(data, { shelfHistory: true });
 
 /** 一份产出里的 journal 记录（跳过表头行）。 */
@@ -318,7 +320,12 @@ test('一条都没剩下的豆列照样写出去，但要数出来', () => {
 
 // ── 状态历史 ──────────────────────────────────────────────────────────────
 
-test('默认不带状态历史，加了开关才有', () => {
+test('默认就带状态历史，显式关掉才没有', () => {
+  // 2026-08-25 把默认翻了过来。这段历史豆瓣自己已经不留了，不带走就是永久丢掉；
+  // 而写错的代价是 NeoDB 上多几行日期不对的历史，不动标记、不发时间线、也不联邦。
+  const byDefault = buildNeodbNdjson(data);
+  assert.ok(byDefault.report.shelfLogs > 0, '不给 options 也该有历史');
+  assert.equal(of(journal(byDefault), 'ShelfLog').length, byDefault.report.shelfLogs);
   assert.equal(of(journal(plain), 'ShelfLog').length, 0);
   assert.equal(plain.report.shelfLogs, 0);
   assert.ok(withHistory.report.shelfLogs > 0);

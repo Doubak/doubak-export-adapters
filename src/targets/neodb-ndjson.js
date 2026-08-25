@@ -19,7 +19,7 @@
  * 最后一样才是真正要紧的：豆瓣只存当前状态，**但广播是发出去那一刻就冻住的**，
  * 所以 3411 条广播里藏着一条 想看 → 在看 → 看过 的时间线，还带着当时打的星。
  * 2373 个作品有这样的历史，其中 678 个状态变过不止一次——**这是豆瓣自己都不再
- * 保留的东西**，而这个项目的导出路径里没有第二样能表达它。见 `--shelf-history`。
+ * 保留的东西**，而这个项目的导出路径里没有第二样能表达它。默认就带上，`--no-shelf-history` 关掉。
  *
  * ## 形状全部是读 `journal/importers/ndjson.py` 定的
  *
@@ -134,14 +134,15 @@ function line(obj) {
  *
  * @param {ReturnType<import('../canonical.js').loadCanonical>} data
  * @param {{shelfHistory?: boolean, visibility?: number, generator?: string}} [options]
- *   `shelfHistory` 默认关：见 `--shelf-history` 的说明。
+ *   `shelfHistory` 默认**开**：这段历史豆瓣自己已经不留了，不带走就是永久丢掉。
+ *   写错的代价是 NeoDB 上多几行日期不对的历史——不动标记、不发时间线、也不联邦。
  *   `visibility` 默认 0（不写这个键，服务端就是公开）；1 = 仅关注者，2 = 仅提及者。
  * @returns {{files: {name: string, text: string}[],
  *            sidecars: {name: string, text: string}[], report: object}}
  *   `files` 进 zip，`sidecars` 写在 zip 旁边——后者是给人看的，不会被导入。
  */
 export function buildNeodbNdjson(data, options = {}) {
-  const { shelfHistory = false, visibility = 0, generator = 'doubak-export-adapters' } = options;
+  const { shelfHistory = true, visibility = 0, generator = 'doubak-export-adapters' } = options;
   if (![0, 1, 2].includes(visibility)) {
     throw new Error(`visibility 只能是 0（公开）/ 1（仅关注者）/ 2（仅提及者），收到 ${visibility}`);
   }
@@ -217,7 +218,7 @@ export function buildNeodbNdjson(data, options = {}) {
   const tagMembersOut = [];
   /** 标签名 → 第一次用到它的时间，用来给 `Tag` 记录一个稳定的次序。 */
   const tagNames = new Set();
-  /** 出现在 zip 里的作品，`--shelf-history` 只给这些作品写历史。 */
+  /** 出现在 zip 里的作品，状态历史只给这些作品写。 */
   const markedItems = new Map();
 
   /** 一条链接都没有的那些。写在 zip 外面——它们不该被导入，只该被看见。 */
@@ -493,7 +494,7 @@ export function buildNeodbNdjson(data, options = {}) {
     report.collections += 1;
   }
 
-  // ---- 状态历史（`--shelf-history`） ---------------------------------------
+  // ---- 状态历史（默认开，`--no-shelf-history` 关掉） ------------------------
 
   const shelfLogsOut = [];
   if (shelfHistory) {

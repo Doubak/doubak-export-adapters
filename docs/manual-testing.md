@@ -151,13 +151,13 @@ node tools/check-export.mjs ~/downloads/20260806-canonical /tmp/export-sample --
 
 不满意就把这 20 条删掉重来——**这正是先传 20 条的意义**。
 
-### NeoDB · 状态历史（`--shelf-history`）
+### NeoDB · 状态历史（默认就有，`--no-shelf-history` 关掉）
 
-这一路**默认关着**（理由见 README：全量往返验过了，但只验过一份档案），而且要单独验一次——别在同一次里连它一起验：
+这一路 2026-08-25 起**默认就带上**（理由见 README），但第一次导的时候还是值得单独验一次——别在同一次里连它一起验：
 
 ```sh
 node bin/export.js ~/downloads/20260806-canonical /tmp/export-sample-history \
-  --target=neodb --sample=40 --shelf-history
+  --target=neodb --sample=40
 ```
 
 40 条切出来大约几十条历史，小到可以一条一条看。传进**另一个**新账号，然后：

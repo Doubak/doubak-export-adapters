@@ -42,9 +42,23 @@ if (!inDir) {
   console.error(`  --target=  ${TARGETS.join(',')} 里挑，默认 ${DEFAULT_TARGETS.join(',')}`);
   console.error('             neodb 出 NDJSON；neodb_csv 是旧的那套 CSV，要显式要');
   console.error('  --sample=N 只切 N 条标记出来先试（按分类和状态轮着取，见 docs/manual-testing.md）');
-  console.error('  --shelf-history  NeoDB NDJSON 里带上广播还原出来的状态历史（默认不带）');
+  console.error('  --no-shelf-history  不要从广播还原状态历史（默认是要的）');
   console.error('  --visibility=0|1|2  NDJSON 记录的可见性：0 公开(默认) / 1 仅关注者 / 2 仅提及者');
   process.exit(2);
+}
+
+// 拼错的开关必须报错，不能静默忽略。`--no-shelf-history` 是**负向**的：
+// 打成 `--no-shelf-histroy` 的话，静默忽略等于拿到跟本意相反的结果。
+{
+  const KNOWN = ['--no-shelf-history', '--shelf-history'];
+  const KNOWN_PREFIX = ['--sample=', '--visibility=', '--target='];
+  const bad = flags.filter((f) => !KNOWN.includes(f)
+    && !KNOWN_PREFIX.some((p) => f.startsWith(p)));
+  if (bad.length) {
+    console.error(`不认识这些开关：${bad.join(' ')}`);
+    console.error('能用的：' + [...KNOWN, ...KNOWN_PREFIX.map((p) => `${p}…`)].join(' / '));
+    process.exit(2);
+  }
 }
 
 const sampleSize = (() => {
@@ -58,7 +72,10 @@ const sampleSize = (() => {
   return v;
 })();
 
-const shelfHistory = flags.includes('--shelf-history');
+// 默认带上。这段历史豆瓣自己已经不留了，不带走就是永久丢掉；而写错的代价是
+// NeoDB 上多几行日期不对的历史，不动标记、不发时间线、也不联邦。
+// **不对称**，所以默认站在「带走」那一边。`--shelf-history` 留着当兼容写法。
+const shelfHistory = !flags.includes('--no-shelf-history');
 
 const visibility = (() => {
   const f = flags.find((a) => a.startsWith('--visibility='));
@@ -142,8 +159,8 @@ if (wanted.includes('neodb')) {
       say(`  · 另有 ${n(report.shelfLogsMergedEmpty)} 条广播什么都没冻住（没星也没字），整条略过`);
     }
   } else if (data.broadcasts.length) {
-    say(`  · 状态历史没有带上。加 --shelf-history 可以从 ${n(data.broadcasts.length)} 条广播里还原`
-      + '出一条带日期的时间线');
+    say(`  ⚠ 状态历史**被 --no-shelf-history 关掉了**，${n(data.broadcasts.length)} 条广播里那条`
+      + '带日期的时间线不会带走。豆瓣自己已经不显示它了。');
   }
   if (visibility) {
     say(`  · 所有记录写了 visibility=${n(visibility)}（${visibility === 1 ? '仅关注者' : '仅提及者'}）`);
