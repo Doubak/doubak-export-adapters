@@ -68,9 +68,9 @@ Goodreads → goodreads/
 
 ## NeoDB 那一路现在出 NDJSON，CSV 降成 `--target=neodb_csv`
 
-NeoDB 的维护者在 [PR 里](https://github.com/neodb-social/neodb/pull/1801)说得很直接：
+NeoDB 的维护者在 Discord 上说得很直接：
 
-> 厉害。可以生成NDJSON吗？旧的CSV格式只是为了兼容NiceDB和Doufen，限制太多了。
+> 可以生成NDJSON吗？旧的CSV格式只是为了兼容NiceDB和Doufen，限制太多了。
 
 也就是说 CSV 不只是「旧」——它是为了兼容另外两个工具留下的一层壳。NDJSON 是 NeoDB 自己导出、自己导入的格式，装得下 CSV **结构上装不下**的四样东西：**豆列**、**不挂作品的日记**、**每条记录各自的可见性**，以及**状态历史**。
 
