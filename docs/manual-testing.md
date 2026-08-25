@@ -198,7 +198,9 @@ node tools/check-roundtrip.mjs /tmp/export-sample-history ~/downloads/neodb_..._
       那不是错——我们故意不写日期，服务器只能拿导入那一刻顶上。
 - [ ] ⚠ **那份导出里有你这个身份的私钥**（`actor.ndjson`）。看完就删，别贴进 issue。
 
-确认没问题再考虑全量的 2519 条。
+确认没问题再考虑全量的 2519 条。全量那次的结果是公开的，可以拿来对照自己那份长什么样：
+**<https://neodb.social/users/immewx/>**（想看 1098 · 在看 71 · 看过 1774；电影 1473 · 剧集 638 ·
+游戏 598 · 图书 145 · 音乐 84 · 舞台剧 5——电影/剧集那两个数是 NeoDB 自己判的，跟我们判的差 25 条）。
 
 ### Letterboxd
 
