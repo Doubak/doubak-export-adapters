@@ -153,7 +153,7 @@ node tools/check-export.mjs ~/downloads/20260806-canonical /tmp/export-sample --
 
 ### NeoDB · 状态历史（`--shelf-history`）
 
-这一路是全新的，**默认关着**，而且要单独验一次——别在同一次里连它一起验：
+这一路**默认关着**（理由见 README：全量往返验过了，但只验过一份档案），而且要单独验一次——别在同一次里连它一起验：
 
 ```sh
 node bin/export.js ~/downloads/20260806-canonical /tmp/export-sample-history \
