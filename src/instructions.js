@@ -26,6 +26,10 @@ export function instructions(r) {
     L.push('设置 → 数据 → **导入 NeoDB 备份**，上传 `neodb/neodb-ndjson-import.zip`');
     L.push('（整个 zip，不用解压）。页面会自己认出格式，「检测到的格式」那一行应当显示 **NDJSON**。');
     L.push('');
+    L.push('⚠ **不是**名字里带「豆瓣」的那一节。那一节收的是豆伴（Doufen）的 `.xlsx`，');
+    L.push('传这个 zip 上去只会被拒。名字对不上是有原因的：豆备产出的本来就是 NeoDB');
+    L.push('自己的归档格式，所以走它自己的入口，不需要 NeoDB 那边为豆备加任何东西。');
+    L.push('');
     L.push(`这一次带了 **${r.neodb.marks} 条标记**、${r.neodb.ratings} 个评分、`
       + `${r.neodb.comments} 条短评、${r.neodb.tags} 个标签、`
       + `${r.neodb.reviews} 篇书评影评、${r.neodb.notes} 篇笔记、`
