@@ -27,7 +27,7 @@
  * 问题的记录」下次就找不回来了。
  */
 
-import { fieldsOf } from './canonical.js';
+import { fieldsOf } from './record.js';
 import { classify } from './classify.js';
 
 /**

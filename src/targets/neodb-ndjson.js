@@ -70,7 +70,7 @@
  */
 
 import { csv } from '../csv.js';
-import { fieldsOf } from '../canonical.js';
+import { fieldsOf } from '../record.js';
 import { classify, identifiers } from '../classify.js';
 
 /** canonical 的状态 → NeoDB 的 ShelfType。豆瓣没有「弃了」，所以 dropped 用不上。 */

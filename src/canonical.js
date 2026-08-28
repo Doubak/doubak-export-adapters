@@ -25,6 +25,11 @@
  * 按时间取多花不了什么，而且错了会明显（时间倒退），不会静默。
  */
 
+// `latest` / `fieldsOf` 在 record.js 里（纯计算，扩展也要用）。这里**再导出**
+// 而不是让调用方改 import：它们本来就是「读 canonical」的一部分，换个文件住
+// 是我们的事，不该变成二十个调用点的事。
+export { latest, fieldsOf } from './record.js';
+
 import { readFileSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 
@@ -58,26 +63,6 @@ function readNdjson(path) {
     }
   }
   return rows;
-}
-
-/**
- * 取一条记录的当前状态（最后一次观测到的那条 revision）。
- * @param {{revisions?: object[]}} record
- * @returns {object|null} revision，没有 revision 时是 null
- */
-export function latest(record) {
-  const revs = record?.revisions;
-  if (!Array.isArray(revs) || revs.length === 0) return null;
-  let best = revs[0];
-  for (const r of revs) {
-    if ((r.last_observed_at ?? '') >= (best.last_observed_at ?? '')) best = r;
-  }
-  return best;
-}
-
-/** 当前状态的 `fields`，永远返回一个对象，省得每个调用点都判空。 */
-export function fieldsOf(record) {
-  return latest(record)?.fields ?? {};
 }
 
 /**
