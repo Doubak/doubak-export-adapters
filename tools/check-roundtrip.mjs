@@ -31,7 +31,7 @@
 
 import { readFileSync, existsSync, statSync } from 'node:fs';
 import { join } from 'node:path';
-import { unzip } from '../src/zip.js';
+import { unzip } from '../src/zip-node.js';
 
 const [oursArg, theirsArg] = process.argv.slice(2).filter((a) => !a.startsWith('--'));
 if (!oursArg || !theirsArg) {
@@ -53,8 +53,8 @@ function resolveZip(p) {
 }
 
 /** @returns {{journal: any[], catalog: any[], hasActor: boolean}} */
-function readPackage(zipPath) {
-  const files = unzip(readFileSync(zipPath));
+async function readPackage(zipPath) {
+  const files = await unzip(readFileSync(zipPath));
   const lines = (name) => (files.get(name) ?? '')
     .split('\n').map((l) => l.trim()).filter(Boolean)
     .map((l) => JSON.parse(l));
@@ -67,8 +67,8 @@ function readPackage(zipPath) {
   };
 }
 
-const ours = readPackage(resolveZip(oursArg));
-const theirs = readPackage(resolveZip(theirsArg));
+const ours = await readPackage(resolveZip(oursArg));
+const theirs = await readPackage(resolveZip(theirsArg));
 
 const problems = [];
 const bad = (m) => problems.push(m);

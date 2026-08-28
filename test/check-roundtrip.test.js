@@ -6,7 +6,7 @@ import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { FIXTURE } from './helpers.js';
-import { zip, unzip } from '../src/zip.js';
+import { zip, unzip } from '../src/zip-node.js';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const CHECK = join(ROOT, 'tools', 'check-roundtrip.mjs');
@@ -31,8 +31,8 @@ const EXPORT = join(ROOT, 'bin', 'export.js');
  * 第 3 条是这份测试的重点：哪天我们不再把当天那条广播并进标记那一行，
  * 服务器上就会多出解释不了的行，这里立刻红。
  */
-function asServerExport(ourZip) {
-  const files = unzip(readFileSync(ourZip));
+async function asServerExport(ourZip) {
+  const files = await unzip(readFileSync(ourZip));
   const parse = (name) => (files.get(name) ?? '').split('\n').filter((l) => l.trim()).map((l) => JSON.parse(l));
   const catalog = parse('catalog.ndjson').filter((d) => d.id);
   const journal = parse('journal.ndjson').filter((d) => d.type);
@@ -113,11 +113,13 @@ function exported() {
  * @param {string} ourZip
  * @param {(s: {catalog: any[], journal: any[]}) => void} [mutate] 写出去之前动个手脚
  */
-function serverZip(ourZip, mutate) {
-  const s = asServerExport(ourZip);
-  if (mutate) mutate(s);
+async function serverZip(ourZip, mutate) {
+  const s = await asServerExport(ourZip);
+  // mutate 可能要 await（里面会拆包重打），所以这里必须 await 它 ——
+  // 不 await 的话回调里的改动会在 zip 写出之后才落地，测试静静地失去意义。
+  if (mutate) await mutate(s);
   const p = join(mkdtempSync(join(tmpdir(), 'doubak-server-')), 'export.zip');
-  writeFileSync(p, zip([
+  writeFileSync(p, await zip([
     { name: 'catalog.ndjson', text: `${s.head(s.catalog)}\n` },
     { name: 'journal.ndjson', text: `${s.head(s.journal)}\n` },
   ]));
@@ -132,9 +134,9 @@ function check(ourZip, serverPath) {
   }
 }
 
-test('原样存住的那份，校验器说全对', () => {
+test('原样存住的那份，校验器说全对', async () => {
   const ours = exported();
-  const { code, out } = check(ours, serverZip(ours));
+  const { code, out } = check(ours, await serverZip(ours));
   assert.equal(code, 0, out);
   assert.match(out, /送上去的每一条都原样存住了/);
   // 非空断言：真跑过东西，不是所有表都是 0 条。
@@ -147,11 +149,11 @@ test('原样存住的那份，校验器说全对', () => {
   assert.match(out, /其中 1 条档案里没有标记日期/);
 });
 
-test('同一件事被写成两行就抓得住——这正是 2026-08-24 那个 bug', () => {
+test('同一件事被写成两行就抓得住——这正是 2026-08-24 那个 bug', async () => {
   const ours = exported();
   // 把某条并进标记那一行的历史，改回广播的钟点：同一天、同一状态、时间戳不同。
   // 服务器上于是有了两行，而单看任何一行都不像重复——文字和时间都不一样。
-  const server = serverZip(ours, (s) => {
+  const server = await serverZip(ours, async (s) => {
     const marks = new Map(s.journal.filter((d) => d.type === 'ShelfMember' && d.content.published)
       .map((d) => [`${d.content.withRegardTo}|${d.content.status}`, d.content.published]));
     let hit = 0;
@@ -173,9 +175,9 @@ test('同一件事被写成两行就抓得住——这正是 2026-08-24 那个 b
   assert.match(out, /是同一件事/);
 });
 
-test('服务器上多出一行解释不了的历史就抓得住', () => {
+test('服务器上多出一行解释不了的历史就抓得住', async () => {
   const ours = exported();
-  const server = serverZip(ours, (s) => {
+  const server = await serverZip(ours, async (s) => {
     const one = s.journal.find((d) => d.type === 'ShelfLog');
     s.journal.push({ ...one, timestamp: '2001-01-01 00:00:00+00:00', metadata: {} });
   });
@@ -184,9 +186,9 @@ test('服务器上多出一行解释不了的历史就抓得住', () => {
   assert.match(out, /多出一行.*解释不了/s);
 });
 
-test('短评在服务器上变了样就抓得住', () => {
+test('短评在服务器上变了样就抓得住', async () => {
   const ours = exported();
-  const server = serverZip(ours, (s) => {
+  const server = await serverZip(ours, async (s) => {
     const one = s.journal.find((d) => d.type === 'Comment');
     one.content.content = `${one.content.content}（被改过）`;
   });
@@ -195,9 +197,9 @@ test('短评在服务器上变了样就抓得住', () => {
   assert.match(out, /短评：.*存进去变了样/);
 });
 
-test('整条没进去就抓得住', () => {
+test('整条没进去就抓得住', async () => {
   const ours = exported();
-  const server = serverZip(ours, (s) => {
+  const server = await serverZip(ours, async (s) => {
     const i = s.journal.findIndex((d) => d.type === 'ShelfMember');
     s.journal.splice(i, 1);
   });
@@ -206,17 +208,17 @@ test('整条没进去就抓得住', () => {
   assert.match(out, /标记：我们送了.*服务器上没有/);
 });
 
-test('私密豆列在服务器上变公开就抓得住', () => {
+test('私密豆列在服务器上变公开就抓得住', async () => {
   const ours = exported();
-  const server = serverZip(ours, (s) => {
+  const server = await serverZip(ours, async (s) => {
     const c = s.journal.filter((d) => d.type === 'Collection');
     assert.ok(c.length, '样本里该有豆列');
     // 样本里未必有私密的那一份，所以先让它私密，再模拟服务器把它存成了公开。
-    const ourFiles = unzip(readFileSync(ours));
+    const ourFiles = await unzip(readFileSync(ours));
     const j = ourFiles.get('journal.ndjson').split('\n').filter(Boolean).map((l) => JSON.parse(l));
     const mine = j.find((d) => d.type === 'Collection');
     mine.visibility = 2;
-    writeFileSync(ours, zip([
+    writeFileSync(ours, await zip([
       { name: 'catalog.ndjson', text: ourFiles.get('catalog.ndjson') },
       { name: 'journal.ndjson', text: `${j.map((x) => JSON.stringify(x)).join('\n')}\n` },
     ]));

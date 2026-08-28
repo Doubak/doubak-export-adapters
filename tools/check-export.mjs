@@ -30,7 +30,7 @@ import { readFileSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { loadCanonical, fieldsOf } from '../src/canonical.js';
 import { classify, identifiers } from '../src/classify.js';
-import { unzip } from '../src/zip.js';
+import { unzip } from '../src/zip-node.js';
 
 const argv = process.argv.slice(2);
 const isSample = argv.includes('--sample');
@@ -95,7 +95,7 @@ for (const mark of data.marks) {
 // 导不进去的记录**，而它在文件里看起来跟别的一模一样。
 const ndPath = join(outDir, 'neodb', 'neodb-ndjson-import.zip');
 if (existsSync(ndPath)) {
-  const files = unzip(readFileSync(ndPath));
+  const files = await unzip(readFileSync(ndPath));
   // 上传页面是按这两个文件名认格式的（`data.html` 里那段 JSZip），
   // 名字不对就认成「未知格式」，连传都传不上去。
   for (const need of ['catalog.ndjson', 'journal.ndjson']) {
@@ -227,7 +227,7 @@ if (existsSync(ndPath)) {
 // ── NeoDB（旧的 CSV） ────────────────────────────────────────────────────
 const zipPath = join(outDir, 'neodb_csv', 'neodb-import.zip');
 if (existsSync(zipPath)) {
-  const files = unzip(readFileSync(zipPath));
+  const files = await unzip(readFileSync(zipPath));
   const KNOWN = ['book', 'movie', 'tv', 'music', 'game', 'podcast', 'performance'];
   let rows = 0;
   const seen = new Set();

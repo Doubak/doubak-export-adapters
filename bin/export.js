@@ -27,7 +27,7 @@ import { buildLetterboxd } from '../src/targets/letterboxd.js';
 import { buildGoodreads } from '../src/targets/goodreads.js';
 import { instructions } from '../src/instructions.js';
 import { sample } from '../src/sample.js';
-import { zip } from '../src/zip.js';
+import { zip } from '../src/zip-node.js';
 
 const TARGETS = ['neodb', 'neodb_csv', 'letterboxd', 'goodreads'];
 /** 不写 `--target` 时出这几个。`neodb_csv` 要显式要。 */
@@ -133,7 +133,7 @@ if (wanted.includes('neodb')) {
   summary.shelfHistory = shelfHistory;
   const dir = join(outDir, 'neodb');
   mkdirSync(dir, { recursive: true });
-  writeFileSync(join(dir, 'neodb-ndjson-import.zip'), zip(files));
+  writeFileSync(join(dir, 'neodb-ndjson-import.zip'), await zip(files));
   // 旁挂文件不进 zip：它们是给人看的，不该被导入。
   for (const f of sidecars) writeFileSync(join(dir, f.name), f.text);
 
@@ -190,7 +190,7 @@ if (wanted.includes('neodb_csv')) {
   summary.neodbCsv = report;
   const dir = join(outDir, 'neodb_csv');
   mkdirSync(dir, { recursive: true });
-  writeFileSync(join(dir, 'neodb-import.zip'), zip(files));
+  writeFileSync(join(dir, 'neodb-import.zip'), await zip(files));
   for (const f of sidecars) writeFileSync(join(dir, f.name), f.text);
 
   const cats = Object.entries(report.byCategory)
