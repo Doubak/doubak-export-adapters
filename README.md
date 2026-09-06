@@ -19,7 +19,7 @@ npm test    # node --test，零依赖，不需要 npm install（182 个测试）
 需要 Node ≥ 20。**不联网**——产出是几个文件，什么时候上传、上不上传，都不影响档案。
 
 ```sh
-node bin/export.js ~/downloads/20260806-canonical ~/downloads/20260806-export
+node bin/export.js ~/downloads/canonical ~/downloads/export
 ```
 
 产出目录里除了几个 CSV 和一个 zip，还有一份 `怎么导入.md`，写着这一次的真实条数和每个平台的上传入口。

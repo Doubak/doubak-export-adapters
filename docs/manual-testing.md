@@ -16,7 +16,7 @@
 ## 第 0 步 · 先跑一次，读报告
 
 ```sh
-node bin/export.js ~/downloads/20260806-canonical /tmp/export-full
+node bin/export.js ~/downloads/canonical /tmp/export-full
 ```
 
 **报告本身就是第一道检查。** 里面每个数都该说得通：
@@ -41,7 +41,7 @@ NeoDB  → /tmp/export-full/neodb/neodb-ndjson-import.zip  (NDJSON)
 ## 第 1 步 · 不上传就能做的检查
 
 ```sh
-node tools/check-export.mjs ~/downloads/20260806-canonical /tmp/export-full
+node tools/check-export.mjs ~/downloads/canonical /tmp/export-full
 ```
 
 它把刚写出来的文件**读回来**，跟 canonical 逐条逐字段对：
@@ -92,7 +92,7 @@ cat /tmp/export-full/letterboxd/letterboxd-needs-check.csv   # 匹配不了的�
 **三个平台的导入都不好撤**：NeoDB 要一条条删，Letterboxd 的观影记录没有批量撤销，Goodreads 更麻烦。所以别拿全量去试。
 
 ```sh
-node bin/export.js ~/downloads/20260806-canonical /tmp/export-sample --sample=20
+node bin/export.js ~/downloads/canonical /tmp/export-sample --sample=20
 ```
 
 `--sample` 按 **(分类, 状态)** 轮着取，不是取前 20 条。取前 20 条会拿到一堆同类的——canonical 按抓取顺序排，开头很可能全是电影、全是「看过」，那样验不了图书的 ISBN、验不了「想看」有没有跑进「看过」、验不了舞台剧的链接对方认不认。
@@ -104,7 +104,7 @@ node bin/export.js ~/downloads/20260806-canonical /tmp/export-sample --sample=20
 小样也要先自查一遍，但**要带 `--sample`**：
 
 ```sh
-node tools/check-export.mjs ~/downloads/20260806-canonical /tmp/export-sample --sample
+node tools/check-export.mjs ~/downloads/canonical /tmp/export-sample --sample
 ```
 
 不带的话它会报「20 行，该有 2943 条」——这是对的，**「产物比档案少」正是漏导的症状**，默认就放行等于把最该报的那个警报关掉。带上 `--sample`，逐条的检查照做，只是不再核对总条数。
@@ -156,7 +156,7 @@ node tools/check-export.mjs ~/downloads/20260806-canonical /tmp/export-sample --
 这一路 2026-08-25 起**默认就带上**（理由见 README），但第一次导的时候还是值得单独验一次——别在同一次里连它一起验：
 
 ```sh
-node bin/export.js ~/downloads/20260806-canonical /tmp/export-sample-history \
+node bin/export.js ~/downloads/canonical /tmp/export-sample-history \
   --target=neodb --sample=40
 ```
 
@@ -235,8 +235,8 @@ My Books → Import and export → Import Books，上传 `goodreads.csv`。它�
 小样确认没问题，才做这一步。
 
 ```sh
-node bin/export.js ~/downloads/20260806-canonical /tmp/export-full
-node tools/check-export.mjs ~/downloads/20260806-canonical /tmp/export-full   # 这次不带 --sample
+node bin/export.js ~/downloads/canonical /tmp/export-full
+node tools/check-export.mjs ~/downloads/canonical /tmp/export-full   # 这次不带 --sample
 ```
 
 **导到一个新目录，别覆盖小样那份。** 出了问题还得回去看当时传的到底是什么。

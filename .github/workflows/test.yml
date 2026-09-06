@@ -8,13 +8,31 @@ jobs:
   test:
     runs-on: ubuntu-latest
     steps:
+      # 两个仓库并排检出——这就是本地的默认开发布局，也是不需要 submodule
+      # 的原因。**扩展里有这个仓库那几个纯函数的逐字节拷贝**
+      # （`doubak-extension/src/vendor/`），而「是不是同一份」只有两边都在的
+      # 时候才验得了。`test/vendor-freshness.test.js` 缺了它会静默跳过，
+      # 跳过在 CI 里等于没测，所以那条测试在 CI 里把「缺仓库」直接判失败。
+      #
+      # 扩展按它的**默认分支**检出，所以一次跨仓库的改动会红一会儿：先推这边，
+      # 这里红（扩展还没同步）；再在扩展里跑一遍 sync-vendor 推上去，两边都绿。
+      # 那段红是对的——那段时间里两个宿主对同一份档案确实会给出不同结果，
+      # 而上一次同样的不一致是完全无声的，持续了两天。
       - uses: actions/checkout@v4
+        with:
+          path: doubak-export-adapters
+
+      - uses: actions/checkout@v4
+        with:
+          repository: Doubak/doubak-extension
+          path: doubak-extension
 
       - uses: actions/setup-node@v4
         with:
           node-version: '24'
 
       - name: 跑测试
+        working-directory: doubak-export-adapters
         run: npm test
 
       # **换一个时区再跑一遍。**
@@ -26,11 +44,13 @@ jobs:
       - name: 换个时区再跑一遍
         env:
           TZ: Pacific/Kiritimati
+        working-directory: doubak-export-adapters
         run: npm test
 
       # zip 的判据是「别人的实现认不认」，靠系统的 unzip。这台机器上没有 unzip
       # 的话那条测试会跳过——**跳过在 CI 里等于没测**，所以显式确认它在。
       - name: 确认 unzip 在，那条测试不是跳过的
+        working-directory: doubak-export-adapters
         run: |
           command -v unzip >/dev/null || {
             echo '::error::没有 unzip，zip 的外部校验会静默跳过'; exit 1; }
@@ -43,6 +63,7 @@ jobs:
       # 「两条路互相对一遍」只有两个目录都在时才会跑——**只跑默认的话，
       # 那一整段检查在 CI 里等于不存在**。
       - name: 对着样本档案跑一次完整导出
+        working-directory: doubak-export-adapters
         run: |
           node bin/export.js test/fixtures/canonical /tmp/export-out \
             --target=neodb,neodb_csv,letterboxd,goodreads
@@ -58,12 +79,14 @@ jobs:
       # 顺带确认「两条路互相对一遍」真的跑了：一段从没执行过的检查，
       # 表现跟一段通过了的检查一模一样。
       - name: 校验器在好的产物上通过
+        working-directory: doubak-export-adapters
         run: |
           node tools/check-export.mjs test/fixtures/canonical /tmp/export-out | tee /tmp/check.out
           grep -q 'NeoDB 两路' /tmp/check.out || {
             echo '::error::NDJSON 跟 CSV 的交叉对比没有跑到'; exit 1; }
 
       - name: 校验器在坏的产物上必须失败
+        working-directory: doubak-export-adapters
         run: |
           cp -r /tmp/export-out /tmp/export-bad
           sed -i 's/,\([1-5]\),\([0-9]\{4\}-\)/,9,\2/' /tmp/export-bad/letterboxd/letterboxd-watched.csv
@@ -74,6 +97,7 @@ jobs:
       # 小样带 --sample 该过，不带该失败——「产物比档案少」正是漏导的症状，
       # 默认就放行等于把最该报的那个警报关掉。
       - name: 小样模式
+        working-directory: doubak-export-adapters
         run: |
           node bin/export.js test/fixtures/canonical /tmp/export-sample --sample=6
           node tools/check-export.mjs test/fixtures/canonical /tmp/export-sample --sample
@@ -98,6 +122,7 @@ jobs:
         if: github.event_name == 'push'
         env:
           COVERALLS_REPO_TOKEN: ${{ secrets.COVERALLS_REPO_TOKEN }}
+        working-directory: doubak-export-adapters
         run: |
           node --test --experimental-test-coverage \
             --test-coverage-exclude='test/**' \
@@ -105,3 +130,11 @@ jobs:
             --test-reporter=dot --test-reporter-destination=stdout \
             "test/**/*.test.js"
           node tools/coveralls.mjs lcov.info
+
+      # 本地跑测试时扩展仓库可能不在场，那条新鲜度检查会「带原因跳过」。
+      # 跳过在本地合理，在 CI 里等于没测——所以显式再确认一遍它真的跑了。
+      - name: 确认 vendor 新鲜度检查确实跑了而不是跳过了
+        working-directory: doubak-export-adapters
+        run: |
+          test -f ../doubak-extension/tools/sync-vendor.mjs || {
+            echo '::error::扩展仓库缺失，vendor 新鲜度检查会静默跳过'; exit 1; }
