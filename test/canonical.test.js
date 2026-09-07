@@ -29,7 +29,7 @@ test('读得进真实档案切出来的样本', () => {
   const data = loadCanonical(FIXTURE);
   assert.equal(data.marks.length, 18);
   assert.equal(data.subjects.length, 18);
-  assert.equal(data.longform.length, 5);
+  assert.equal(data.longform.length, 6);
   assert.equal(data.account.username, 'mewcatcher');
 });
 

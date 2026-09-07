@@ -244,9 +244,9 @@ test('没有标记日期的那条不写 published，而不是编一个', () => {
 
 // ── 长文 ──────────────────────────────────────────────────────────────────
 
-test('不挂作品的日记变成 Article——CSV 那边这三篇是直接丢掉的', () => {
+test('不挂作品的日记变成 Article——CSV 那边这几篇是直接丢掉的', () => {
   const arts = of(journal(plain), 'Article');
-  assert.equal(arts.length, 3);
+  assert.equal(arts.length, 4);
   for (const a of arts) {
     assert.equal(a.content.source.mediaType, 'text/markdown');
     assert.ok(a.content.source.content.length > 0);
@@ -254,6 +254,71 @@ test('不挂作品的日记变成 Article——CSV 那边这三篇是直接丢�
   }
   const titles = arts.map((a) => a.content.name);
   assert.ok(titles.includes('豆瓣更换海外手机号显示“不可预期状态”的解决方案'));
+});
+
+// ── 在豆瓣上不公开的长文 ──────────────────────────────────────────────────
+//
+// 起因：`Doubak/doubak-export-adapters#4`。日记默认按公开导入，而 NeoDB 的
+// Article 是要联邦出去的，于是一篇在豆瓣上「仅自己可见」的日记会被推上公网。
+//
+// 而「仅自己可见」有两个成因，**方向相反**：作者自己藏的，和豆瓣锁掉的。前者发
+// 出去就撤不回来；后者留住它恰恰是这份存档存在的理由。这里能有一个安全的默认值，
+// 是因为**导出不等于公开**——记录照样进用户自己的账号，只是不对外可见，
+// 要不要公开由他在 NeoDB 自己那一页上决定。
+
+test('**豆瓣上不公开的日记写 visibility=2，公开的不写**', () => {
+  const arts = of(journal(plain), 'Article');
+  const 锁 = arts.find((a) => a.content.name === '想看的被河蟹的电影');
+  const 藏 = arts.find((a) => a.content.name === '测试一下私密日记？');
+  const 公开 = arts.find((a) => a.content.name === '测试一下带图的日记');
+  assert.equal(锁.visibility, 2, '豆瓣锁掉的日记不该公开导入');
+  assert.equal(藏.visibility, 2, '作者自己藏起来的日记不该公开导入');
+  assert.ok(!('visibility' in 公开), '公开的日记跟其他记录一样不写');
+});
+
+test('**正文一个字都不许少** —— 收起来的是可见性，不是内容', () => {
+  // 「不公开」与「不导出」是两件事。这份存档存在的理由正是留住豆瓣拿掉的东西，
+  // 而把它整条丢掉就是替豆瓣把它二次消音——那比公开导入更隐蔽，因为一条被静默
+  // 丢掉的记录不留任何痕迹给人发现。
+  const 锁 = of(journal(plain), 'Article').find((a) => a.content.name === '想看的被河蟹的电影');
+  assert.ok(锁.content.source.content.includes('An Unfinished Film'), '正文没了');
+});
+
+test('**评论恒为 null，那是「不适用」不是「不知道」，不许被收起来**', () => {
+  // 豆瓣压根没给评论这个功能（实测 2 篇评论页上「私密」「仅自己」「可见」一个字
+  // 都没有，连容器都不存在）。并进「不知道」的话，每个人的每一篇影评书评都会被
+  // 收成 visibility=2 —— 而它们在豆瓣上本来就挂在作品页上给所有人看。
+  for (const r of of(journal(plain), 'Review')) {
+    assert.ok(!('visibility' in r), `${r.content.name} 不该被收起来`);
+  }
+});
+
+test('**缺这个字段的老 canonical 按不公开处理**', () => {
+  // 解析器 0.12.0 才开始写它。两个方向的代价差着一个量级：把公开的收成 2，
+  // 用户点一下就改回来；把私密的推上联邦，撤不回来。
+  // 只深拷 longform 那一段：`loadCanonical` 的产出里挂着函数，整份 structuredClone
+  // 会抛 DataCloneError。
+  const old = { ...data, longform: JSON.parse(JSON.stringify(data.longform)) };
+  for (const piece of old.longform) {
+    for (const rev of piece.revisions) delete rev.fields.visibility;
+  }
+  const arts = of(journal(buildNeodbNdjson(old, {})), 'Article');
+  assert.ok(arts.length > 0, '一篇 Article 都没有，这条测试什么都没查');
+  for (const a of arts) assert.equal(a.visibility, 2, `${a.content.name} 该按不公开处理`);
+  // 评论仍然不受影响 —— 它们本来就是「不适用」而不是「不知道」。
+  for (const r of of(journal(buildNeodbNdjson(old, {})), 'Review')) {
+    assert.ok(!('visibility' in r), '评论不该跟着被收起来');
+  }
+});
+
+test('**报告要逐篇点名，还要说清是谁让它不公开的**', () => {
+  // 只给一个数字的话，看的人分不出「这是我自己藏的」和「这是豆瓣拿下的」——
+  // 而那正是拿豆瓣的审查冒充用户的意愿。
+  const { report } = plain;
+  assert.deepEqual(
+    report.restricted.map((x) => [x.title, x.by]).sort(),
+    [['想看的被河蟹的电影', 'platform'], ['测试一下私密日记？', 'author']].sort(),
+  );
 });
 
 test('挂在作品上的影评变成 Review，正文标成 markdown', () => {
@@ -424,10 +489,17 @@ test('不写 posts，也不出 post 记录——上游那段是空函数', () =>
 // ── 可见性 ────────────────────────────────────────────────────────────────
 
 test('默认不写 visibility：写死 0 跟不写等价，但不写不会盖掉别的', () => {
+  // **两处例外，都是「档案确实知道它不公开」，方向都是收紧。**
+  const 私密豆列 = (r) => r.type === 'Collection' && r.visibility === 2;
+  const 不公开的长文 = (r) => ['Article', 'Note', 'Review'].includes(r.type) && r.visibility === 2;
+  let 例外 = 0;
   for (const r of journal(plain)) {
-    if (r.type === 'Collection' && r.visibility === 2) continue; // 私密豆列那一条
+    if (私密豆列(r) || 不公开的长文(r)) { 例外 += 1; continue; }
     assert.ok(!('visibility' in r), `${r.type} 默认不该写 visibility`);
   }
+  // **例外要数出来。** 不数的话，这两个谓词哪天因为字段改名而恒为假，这条测试
+  // 会照样通过——而它守的正是「除了它们，别的都不许写」。
+  assert.equal(例外, 3, '1 份私密豆列 + 2 篇不公开的日记');
 });
 
 test('--visibility=1 把每条记录都写上，除了更严的私密豆列', () => {
@@ -439,6 +511,12 @@ test('--visibility=1 把每条记录都写上，除了更严的私密豆列', ()
     if (r.type === 'ShelfLog') continue; // import_shelf_log 不读 visibility
     if (r.type === 'Collection' && r.content.name === 'SELECTS') {
       assert.equal(r.visibility, 2, '私密豆列不该被放宽');
+      continue;
+    }
+    // 在豆瓣上不公开的长文同理：`--visibility` 是给公开记录定基线的，
+    // **它不该把已知不公开的东西放宽**。两处例外方向一致。
+    if (['想看的被河蟹的电影', '测试一下私密日记？'].includes(r.content?.name ?? r.content?.title)) {
+      assert.equal(r.visibility, 2, '豆瓣上不公开的日记不该被放宽');
       continue;
     }
     assert.equal(r.visibility, 1, `${r.type} 没写上 visibility`);

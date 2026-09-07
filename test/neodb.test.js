@@ -99,7 +99,7 @@ test('豆瓣五种 medium 的 URL，NeoDB 的五个站点规则都认', () => {
 });
 
 test('不挂作品的日记没有去处，数出来而不是硬塞', () => {
-  assert.equal(report.unattachedLongform, 3);
+  assert.equal(report.unattachedLongform, 4);
   assert.equal(report.reviews, 2);
 });
 

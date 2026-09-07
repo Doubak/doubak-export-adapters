@@ -146,6 +146,28 @@ if (existsSync(ndPath)) {
     for (const m of r.items ?? []) if (m.item) refs.push(m.item);
     for (const u of refs) if (!catalog.has(u)) bad(`NeoDB NDJSON: ${u} 不在 catalog.ndjson 里，这条记录导不进去`);
 
+    // **在豆瓣上不公开的长文，一条都不许公开导入。**
+    //
+    // 这一条与别的检查不同：别的是「导进去对不对」，这一条是「导进去会不会伤到人」。
+    // NeoDB 的 Article / Note / Review 是要联邦出去的，推错一次撤不回来。
+    //
+    // 单元测试跑的是夹具，而这个脚本跑的是**整份真实档案**——去年那次「3493 枚角标
+    // 全量过了」的教训就是：只在自己预期出事的地方巡逻，等于没巡逻。
+    if (['Article', 'Note', 'Review'].includes(r.type)) {
+      const title = r.content?.name ?? r.content?.title ?? '(无标题)';
+      const piece = (data.longform ?? []).find((x) => {
+        const f = fieldsOf(x);
+        return (f.title ?? '') === title;
+      });
+      const vis = piece ? fieldsOf(piece).visibility : undefined;
+      // 评论恒为 null（豆瓣没给评论这个功能），那是「不适用」不是「不知道」。
+      const 该收起来 = piece && piece.kind !== 'review' && vis !== 'public';
+      if (该收起来 && r.visibility !== 2) {
+        bad(`NeoDB NDJSON: 《${title}》在豆瓣上是 ${vis ?? '（档案里没这个字段）'}，`
+          + `导出却写 visibility=${r.visibility ?? 0}（公开）——这一推是撤不回来的`);
+      }
+    }
+
     if (r.type === 'ShelfMember') {
       marks += 1;
       const url = r.content?.withRegardTo;
