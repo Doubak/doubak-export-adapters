@@ -166,17 +166,25 @@ if (wanted.includes('neodb')) {
     say(`  · 所有记录写了 visibility=${n(visibility)}（${visibility === 1 ? '仅关注者' : '仅提及者'}）`);
   }
   if (report.restricted?.length) {
-    // **点名，不只是计数。** 「仅自己可见」有两个成因，方向相反：作者自己藏的，
-    // 和豆瓣锁掉的。看的人得能分出「这是我自己藏的」和「这是豆瓣拿下的」，
-    // 否则这一行就是拿豆瓣的审查冒充用户的意愿。
-    const 名 = {
-      author: '你自己设的', platform: '**豆瓣锁的**',
-      unsure: '这份 canonical 没有可见性字段（旧档案），重跑一次解析器就有了',
-    };
-    say(`  · ${n(report.restricted.length)} 篇长文在豆瓣上不公开，`
-      + '到 NeoDB 也写成 visibility=2（仅提及者）——**东西照样在你账号里**，只是不对外；');
-    say('    要不要公开，在 NeoDB 自己那一页上决定，那是只有你能决定的事');
-    for (const x of report.restricted) say(`      · ${x.title}（${名[x.by] ?? x.by}）`);
+    // **两边分开说，因为处置正好相反。** 「仅自己可见」有两个成因：作者自己藏的，
+    // 和豆瓣锁掉的。合成一句话就是拿豆瓣的审查冒充用户的意愿。
+    const 锁 = report.restricted.filter((x) => x.by === 'platform');
+    const 藏 = report.restricted.filter((x) => x.by !== 'platform');
+    if (锁.length) {
+      say(`  · ${n(锁.length)} 篇日记是**被豆瓣锁成「仅自己可见」的**，这一份里**按公开导入**`
+        + '——它本来就是公开的，是豆瓣把它关掉的');
+      for (const x of 锁) say(`      · ${x.title}`);
+      say('    ⚠ NeoDB 的 Article 会联邦出去，**这一步撤不回来**。要收起来：--visibility=2');
+    }
+    if (藏.length) {
+      const 名 = {
+        author: '你自己设的',
+        unsure: '这份 canonical 没有可见性字段（旧档案），重跑一次解析器就有了',
+      };
+      say(`  · ${n(藏.length)} 篇日记在豆瓣上不公开，写成 visibility=2（仅提及者）`
+        + '——**东西照样在你账号里**，只是不对外');
+      for (const x of 藏) say(`      · ${x.title}（${名[x.by] ?? x.by}）`);
+    }
   }
   if (report.noDetailPage) {
     say(`  ⚠ ${n(report.noDetailPage)} 条没读到详情页，分不出电影还是剧集，按电影处理`);

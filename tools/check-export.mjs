@@ -146,25 +146,36 @@ if (existsSync(ndPath)) {
     for (const m of r.items ?? []) if (m.item) refs.push(m.item);
     for (const u of refs) if (!catalog.has(u)) bad(`NeoDB NDJSON: ${u} 不在 catalog.ndjson 里，这条记录导不进去`);
 
-    // **在豆瓣上不公开的长文，一条都不许公开导入。**
+    // **豆瓣上不公开的长文，两个方向各查一次。**
     //
     // 这一条与别的检查不同：别的是「导进去对不对」，这一条是「导进去会不会伤到人」。
-    // NeoDB 的 Article / Note / Review 是要联邦出去的，推错一次撤不回来。
+    // NeoDB 的 Article / Note / Review 会联邦出去，推错一次撤不回来——而**两个方向
+    // 都能推错**：
     //
-    // 单元测试跑的是夹具，而这个脚本跑的是**整份真实档案**——去年那次「3493 枚角标
-    // 全量过了」的教训就是：只在自己预期出事的地方巡逻，等于没巡逻。
+    //   作者自己藏的被公开导出  →  把他藏起来的东西发上了联邦
+    //   豆瓣锁掉的被收起来      →  这份存档沿用了豆瓣的处置，等于白存
+    //
+    // 只查前一个方向的话，后一个的回归是静默的：包照样生成，导入照样成功，只是那篇
+    // 被拿下的日记在 NeoDB 上也没人看得到——而它正是这份存档最该说话的地方。
+    //
+    // 单元测试跑的是夹具，而这个脚本跑的是**整份真实档案**——「3493 枚角标全量过了」
+    // 那次的教训就是：只在自己预期出事的地方巡逻，等于没巡逻。
     if (['Article', 'Note', 'Review'].includes(r.type)) {
       const title = r.content?.name ?? r.content?.title ?? '(无标题)';
-      const piece = (data.longform ?? []).find((x) => {
-        const f = fieldsOf(x);
-        return (f.title ?? '') === title;
-      });
-      const vis = piece ? fieldsOf(piece).visibility : undefined;
-      // 评论恒为 null（豆瓣没给评论这个功能），那是「不适用」不是「不知道」。
-      const 该收起来 = piece && piece.kind !== 'review' && vis !== 'public';
-      if (该收起来 && r.visibility !== 2) {
-        bad(`NeoDB NDJSON: 《${title}》在豆瓣上是 ${vis ?? '（档案里没这个字段）'}，`
-          + `导出却写 visibility=${r.visibility ?? 0}（公开）——这一推是撤不回来的`);
+      const piece = (data.longform ?? []).find((x) => (fieldsOf(x).title ?? '') === title);
+      if (piece && piece.kind !== 'review') {
+        const f = fieldsOf(piece);
+        // 评论恒为 null（豆瓣没给评论这个功能），那是「不适用」不是「不知道」。
+        const 锁 = f.restricted_by === 'platform';
+        const 不公开 = f.visibility !== 'public';
+        if (不公开 && !锁 && r.visibility !== 2) {
+          bad(`NeoDB NDJSON: 《${title}》在豆瓣上是 ${f.visibility ?? '（档案里没这个字段）'}，`
+            + `导出却写 visibility=${r.visibility ?? 0}（公开）——这一推是撤不回来的`);
+        }
+        if (锁 && r.visibility === 2) {
+          bad(`NeoDB NDJSON: 《${title}》是被豆瓣锁掉的，导出却收成了 visibility=2`
+            + '——它本来就是公开的，跟着豆瓣一起收起来这份存档就白存了');
+        }
       }
     }
 
