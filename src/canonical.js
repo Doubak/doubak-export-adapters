@@ -28,9 +28,9 @@
 // `latest` / `fieldsOf` 在 record.js 里（纯计算，扩展也要用）。这里**再导出**
 // 而不是让调用方改 import：它们本来就是「读 canonical」的一部分，换个文件住
 // 是我们的事，不该变成二十个调用点的事。
-import { mergeReMarks } from './record.js';
+import { canonicalShape } from './record.js';
 
-export { latest, fieldsOf, mergeReMarks } from './record.js';
+export { latest, fieldsOf, mergeReMarks, canonicalShape } from './record.js';
 
 import { readFileSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
@@ -82,27 +82,8 @@ export function loadCanonical(dir) {
     throw new Error(`${dir} 看着不像 canonical 目录（marks.ndjson / subjects.ndjson 都没有）`);
   }
 
-  // 作品数据是按 (medium, id) 定位的：豆瓣的 subject id 在不同 medium 下会撞号。
-  const byKey = new Map();
-  for (const s of out.subjects) byKey.set(`${s.medium}:${s.id}`, s);
-  out.subjectOf = (mark) => byKey.get(`${mark.medium}:${mark.subject?.id}`) ?? null;
-
-  // **删掉再重标的，在这一层就并掉。**
-  //
-  // 豆瓣上删掉一条标记再重新标，会拿到一个新的条目 id，解析器据此如实分成两条
-  // ——canonical 是事件日志，那是对的。但**导出是当前状态**，一个作品只能有一行：
-  // 不并的话实测《盗梦空间》导出了两条 ShelfMember，而 NeoDB 那边第二条会覆盖
-  // 第一条，谁覆盖谁由文件里的先后决定，不由任何判据决定。
-  //
-  // 放在加载这一层而不是各个 target 里：四个 target 都是当前状态的投影，逐个去
-  // 记得做这件事，迟早有一个忘了——而忘了是静默的（多出来的那一行看着完全正常）。
-  // 校验器读的也是这一层，于是「目标里有不止一条 ShelfMember」那条检查照样咬得住。
-  const merged = mergeReMarks(out.marks);
-  out.reMarkedSuperseded = merged.superseded;
-  out.marks = merged.marks;
-
-  out.multiRevisionMarks = out.marks.filter((m) => (m.revisions?.length ?? 0) > 1).length;
-  out.account = out.marks[0]?.account ?? out.doulists[0]?.account ?? null;
-
-  return out;
+  // **这几行是纯计算，所以不在这里。** 读 OPFS 的那个宿主
+  // （扩展的 `pipeline/run.js`）要算出一模一样的东西，而「字节是什么意思」
+  // 只能有一份实现——两边各写一份的那阵子已经漂过一次，见 `canonicalShape` 的说明。
+  return canonicalShape(out);
 }
