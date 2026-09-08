@@ -125,7 +125,11 @@ function writeAll(sub, files) {
   return dir;
 }
 
-const summary = { doulists: data.doulists.length, multiRevisionMarks: data.multiRevisionMarks };
+const summary = {
+  doulists: data.doulists.length,
+  multiRevisionMarks: data.multiRevisionMarks,
+  reMarkedSuperseded: data.reMarkedSuperseded,
+};
 
 if (wanted.includes('neodb')) {
   const { files, sidecars, report } = buildNeodbNdjson(data, { shelfHistory, visibility });
@@ -183,7 +187,11 @@ if (wanted.includes('neodb')) {
       };
       say(`  · ${n(藏.length)} 篇日记在豆瓣上不公开，写成 visibility=2（仅提及者）`
         + '——**东西照样在你账号里**，只是不对外');
-      for (const x of 藏) say(`      · ${x.title}（${名[x.by] ?? x.by}）`);
+      for (const x of 藏) {
+        say(`      · ${x.title}（${名[x.by] ?? x.by}）`);
+        // 认不出来那一栏的下一步是去看那一页，所以把网址给出来。
+        if (x.by === 'unsure' && x.url) say(`        ${x.url}`);
+      }
     }
   }
   if (report.noDetailPage) {
@@ -274,6 +282,12 @@ say('');
 
 // **这一条对每个目标都成立，所以单独说一次。** 导出是当前状态的快照：
 // canonical 里一条标记可能有好几次修订，导出只留最后一次。
+if (data.reMarkedSuperseded) {
+  // **不能不说。** 这是把两条真实的记录压成一条，而压掉的那条在 canonical 里还
+  // 在——与「有几条标记改过」是同一类：数字小到用户自己不会发现，所以得由这里说。
+  say(`注意：${n(data.reMarkedSuperseded)} 个作品在豆瓣上被删掉后重新标记过，`
+    + '导出的是现存的那一条（更早那次的短评与标签留在 canonical 里，导出装不下）。');
+}
 if (data.multiRevisionMarks) {
   say(`注意：${n(data.multiRevisionMarks)} 条标记在档案里有不止一次修订，导出的是最后一次。`);
   say('     修订历史留在 canonical 里，三个平台都收不下——这也是别拿导出文件当备份的原因。');

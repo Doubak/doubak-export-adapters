@@ -343,8 +343,9 @@ test('**报告要逐篇点名，还要说清是谁让它不公开的**', () => {
   // **豆瓣锁的那篇也在名单里，尽管它是被公开导出的那一篇。** 恰恰更该说：
   // 联邦出去撤不回来，而看的人得知道自己正在把什么重新发出去。
   assert.deepEqual(
-    report.restricted.map((x) => [x.title, x.by]).sort(),
-    [['想看的被河蟹的电影', 'platform'], ['测试一下私密日记？', 'author']].sort(),
+    report.restricted.map((x) => [x.title, x.by, x.url]).sort(),
+    [['想看的被河蟹的电影', 'platform', 'https://www.douban.com/note/868128497/'],
+      ['测试一下私密日记？', 'author', 'https://www.douban.com/topic/499256241/']].sort(),
   );
 });
 
@@ -358,7 +359,8 @@ test('**认不出是谁设的，报告里就说认不出，不说「你自己设
   const { report } = buildNeodbNdjson(old, {});
   assert.deepEqual(
     report.restricted.find((x) => x.title === '测试一下带图的日记'),
-    { title: '测试一下带图的日记', by: 'unsure' },
+    // 带上网址：这一栏的下一步动作是**去看那一页**，只给标题的话还得先自己找。
+    { title: '测试一下带图的日记', by: 'unsure', url: 'https://www.douban.com/topic/496284296/' },
   );
 });
 

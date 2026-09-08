@@ -44,8 +44,8 @@ node bin/export.js ~/downloads/canonical ~/downloads/export
 
 ```
 NeoDB  → neodb/neodb-ndjson-import.zip  (NDJSON)
-  标记 2962 条（game 603 · movie 1478 · tv 646 · book 145 · performance 5 · music 85）· 评分 1796 · 短评 2128
-  标签 717 个（贴了 7263 次）· 书评影评 2 篇 · 笔记 0 篇
+  标记 2961 条（game 603 · movie 1477 · tv 646 · book 145 · performance 5 · music 85）· 评分 1795 · 短评 2127
+  标签 717 个（贴了 7258 次）· 书评影评 2 篇 · 笔记 0 篇
   豆列 6 份（73 条） · 不挂作品的日记 4 篇 · 条目 2997 个
   状态历史 2539 条（从广播还原，豆瓣自己已经不显示了）
   · 其中 1703 条是并进标记那一行的（标记本身那件事，NeoDB 导标记时自己就会建一行，我们只把当时的星和短评补上去）
@@ -89,6 +89,8 @@ CSV 那一份没删，只是要显式要。它现在只有两个地方比 NDJSON
 
 - **没有 ISBN / IMDb 的 `info` 兜底。** `parse_catalog` 调的是 `get_item_by_info_and_links("", "", links)`——标题空、info 空，**只靠 URL 匹配**。CSV 那边 `info` 列里的 `isbn:` 还能找回一本豆瓣页面已经没了的书，这边不能。IMDb 有 URL 形式（写进 `external_resources`），ISBN 没有。
 - **上传页面上没有可见性选项。** `data.html` 里检测到 ndjson 就把那三个单选框整个隐藏，于是 `request.POST.get("visibility", 0)` 恒为 0，全部按公开导入。所以这个选择挪进了文件里：`--visibility=1`（仅关注者）/ `2`（仅提及者）。
+- **删掉再重标的作品，导出只留现存的那一条。** 豆瓣上删掉一条标记再重新标会拿到一个新的条目 id，解析器据此如实分成两条——canonical 是事件日志，那是对的。但导出是当前状态，一个作品只能有一行：不并的话实测《盗梦空间》导出了**两条 `ShelfMember`**，而 NeoDB 那边一个作品只有一个书架条目，第二条覆盖第一条，**谁覆盖谁由文件里的先后决定**。判据是「最后一次看到它是什么时候」，不是标记日期——补标一部老片可以有更早的日期，而它仍然是现存的那一条。并掉几条会说出来（更早那次的短评与标签留在 canonical 里，导出装不下）。
+
 - **在豆瓣上「仅自己可见」的日记，两种成因，两种处置。**（[#4](https://github.com/Doubak/doubak-export-adapters/issues/4)）它们在页面上长得一模一样，意思却相反：
 
   | | 意思 | 这一份里 |
