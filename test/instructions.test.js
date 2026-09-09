@@ -74,3 +74,38 @@ test('数字全是 0 的时候也不炸', () => {
   const text = instructions({ doulists: 0, multiRevisionMarks: 0 });
   assert.match(text, /怎么把这些文件导进去/);
 });
+
+test('**「认不出来」和「旧档案」要给出各自的下一步，而不是同一句话**', () => {
+  // 这一段此前一个断言都没有，而它当时说的是错的：`unsure` 的两个成因被合成
+  // 「这份 canonical 里没有可见性字段（旧档案）」一句，于是豆瓣改版的那一种
+  // 会被告知「重跑一次解析器」——而那件事做不成，要改的是抽取器。
+  // 两个方向的下一步相反，说错的方向是**把人支去做做不成的事**，与站点那边
+  // 「缺图」（去重抓）和「图烂了」（重抓没用）必须分开报是同一条。
+  const with_ = (why) => instructions({
+    ...full,
+    neodb: { ...full.neodb, restricted: [{ title: '某篇日记', by: 'unsure', why, url: null }] },
+  });
+
+  const legacy = with_('legacy');
+  assert.match(legacy, /旧档案/);
+  assert.match(legacy, /重新跑一次解析器就有了/);
+  assert.ok(!legacy.includes('救不回来'), '老档案是救得回来的，别把人吓住');
+
+  const stale = with_('unrecognized');
+  assert.match(stale, /没能读出来/);
+  assert.match(stale, /重跑解析器救不回来/);
+  assert.match(stale, /note_visibility/, '得说出去哪儿找线索，否则「改抽取器」无从下手');
+  assert.ok(!stale.includes('旧档案'), '豆瓣改版跟档案新旧没关系，这么写会把人支错方向');
+});
+
+test('豆瓣锁掉的那几篇，说明里要说「按公开导入」并且说撤不回来', () => {
+  // 这一份是被公开导出的那一份，所以恰恰更要说：Article 会联邦出去。
+  const text = instructions({
+    ...full,
+    neodb: { ...full.neodb, restricted: [{ title: '想看的被河蟹的电影', by: 'platform', why: null, url: null }] },
+  });
+  assert.match(text, /想看的被河蟹的电影/);
+  assert.match(text, /按公开导入/);
+  assert.match(text, /撤不回来/);
+  assert.match(text, /--visibility=2/, '得给出收紧的办法，否则说了代价却没给出路');
+});

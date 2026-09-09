@@ -353,15 +353,27 @@ test('**认不出是谁设的，报告里就说认不出，不说「你自己设
   // 两者都收成 visibility=2，行为一模一样——差别只在那句话上。而告诉用户
   // 「这是你自己设成私密的」，在我们其实没读出来的时候，是在替他编造一个决定。
   // 突变验过：把 unsure 那一支改成 author，行为测试一条都不红。
-  const old = { ...data, longform: JSON.parse(JSON.stringify(data.longform)) };
-  const one = old.longform.find((x) => fieldsOf(x).title === '测试一下带图的日记');
-  for (const rev of one.revisions) rev.fields.visibility = 'unknown';
-  const { report } = buildNeodbNdjson(old, {});
+  const bend = (mut) => {
+    const old = { ...data, longform: JSON.parse(JSON.stringify(data.longform)) };
+    const one = old.longform.find((x) => fieldsOf(x).title === '测试一下带图的日记');
+    for (const rev of one.revisions) mut(rev.fields);
+    return buildNeodbNdjson(old, {}).report.restricted
+      .find((x) => x.title === '测试一下带图的日记');
+  };
   assert.deepEqual(
-    report.restricted.find((x) => x.title === '测试一下带图的日记'),
+    bend((f) => { f.visibility = 'unknown'; }),
     // 带上网址：这一栏的下一步动作是**去看那一页**，只给标题的话还得先自己找。
-    { title: '测试一下带图的日记', by: 'unsure', url: 'https://www.douban.com/topic/496284296/' },
+    { title: '测试一下带图的日记', by: 'unsure', why: 'unrecognized', url: 'https://www.douban.com/topic/496284296/' },
   );
+  // **两个成因要分开，因为下一步动作正好相反。** 老档案重跑一次解析器就有了；
+  // 豆瓣改版那种重跑多少次都还是认不出来，要改的是抽取器。合成一句必然把一半人
+  // 支去做一件做不成的事——与站点那边把「缺图」和「图烂了」分开报是同一条。
+  assert.deepEqual(
+    bend((f) => { delete f.visibility; delete f.restricted_by; }),
+    { title: '测试一下带图的日记', by: 'unsure', why: 'legacy', url: 'https://www.douban.com/topic/496284296/' },
+  );
+  // 说得出是谁设的时候，`why` 就没有意义，必须是 null 而不是猜一个。
+  assert.equal(bend((f) => { f.visibility = 'private'; f.restricted_by = 'author'; }).why, null);
 });
 
 test('挂在作品上的影评变成 Review，正文标成 markdown', () => {
