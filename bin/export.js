@@ -81,7 +81,9 @@ const shelfHistory = !flags.includes('--no-shelf-history');
 
 const visibility = (() => {
   const f = flags.find((a) => a.startsWith('--visibility='));
-  if (!f) return 0;
+  // **没给就不传，别在这儿再写一个默认值。** 两个宿主各写一遍，改的时候必然漏掉
+  // 一个，而漏掉是静默的。默认值只住在 neodb-ndjson.js 里。
+  if (!f) return undefined;
   const v = Number(f.slice('--visibility='.length));
   if (![0, 1, 2].includes(v)) {
     console.error(`--visibility 只能是 0 / 1 / 2，收到 ${f.slice('--visibility='.length)}`);
@@ -97,7 +99,7 @@ const visibility = (() => {
 // 只作用于「说不准」那一栏：作者自己设成私密的恒为 2，这个开关碰不到。
 const unknownVisibility = (() => {
   const f = flags.find((a) => a.startsWith('--unknown-visibility='));
-  if (!f) return 2;
+  if (!f) return undefined;  // 同上：默认值只住在 UNKNOWN_VISIBILITY_DEFAULT
   const raw = f.slice('--unknown-visibility='.length);
   const v = Number(raw);
   if (![0, 1, 2].includes(v)) {

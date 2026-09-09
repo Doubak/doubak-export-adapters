@@ -1,7 +1,8 @@
+import { readFile } from 'node:fs/promises';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { loadCanonical, fieldsOf } from '../src/canonical.js';
-import { buildNeodbNdjson } from '../src/targets/neodb-ndjson.js';
+import { buildNeodbNdjson, UNKNOWN_VISIBILITY_DEFAULT } from '../src/targets/neodb-ndjson.js';
 import { buildNeodb } from '../src/targets/neodb.js';
 import { sample } from '../src/sample.js';
 import { FIXTURE, fileNamed, parseCsvObjects } from './helpers.js';
@@ -1256,4 +1257,22 @@ test('**这个开关放松不了作者自己藏的那一篇**', () => {
 test('unknownVisibility 只收 0 / 1 / 2', () => {
   assert.throws(() => buildNeodbNdjson(data, { unknownVisibility: 3 }), /unknownVisibility/);
   assert.throws(() => buildNeodbNdjson(data, { unknownVisibility: -1 }), /unknownVisibility/);
+});
+
+test('**默认值只许有一处，宿主不许各兜一个**', async () => {
+  // 两个宿主（CLI 与扩展面板）都要在「用户没选」的时候用这个默认值。各写一个 `2`
+  // 的话，改的时候必然漏掉一个，而**漏掉是静默的**：一个宿主收着、另一个发出去，
+  // 两边都不报错——正是「一条流水线，两个宿主」里最贵的那一半。
+  assert.equal(UNKNOWN_VISIBILITY_DEFAULT, 2, '默认必须是收紧的那一边');
+  // 不传这个键要落到它上面，而不是落到别的什么值。
+  const d = { ...data, longform: JSON.parse(JSON.stringify(data.longform)) };
+  const one = d.longform.find((x) => fieldsOf(x).title === '测试一下带图的日记');
+  for (const rev of one.revisions) rev.fields.visibility = 'unknown';
+  assert.equal(buildNeodbNdjson(d, {}).report.unknownVisibility, UNKNOWN_VISIBILITY_DEFAULT);
+  assert.equal(buildNeodbNdjson(d).report.unknownVisibility, UNKNOWN_VISIBILITY_DEFAULT);
+
+  // CLI 不许再写一个默认值：没给开关就整个不传。
+  const cli = await readFile(new URL('../bin/export.js', import.meta.url), 'utf8');
+  assert.match(cli, /--unknown-visibility='\)\);\n\s*if \(!f\) return undefined;/);
+  assert.doesNotMatch(cli, /startsWith\('--unknown-visibility='\)\);\n\s*if \(!f\) return [0-9]/);
 });
