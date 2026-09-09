@@ -52,6 +52,12 @@ test('中文文件名：系统的 unzip 读回来一字不差', { skip: HAS_UNZI
   assert.match(listed, /怎么导入\.md/, 'unzip 把中文名读岔了 —— 查中央目录的 version made by');
   // 内容也要对得上：名字读错的时候按名字取内容会直接失败。
   assert.equal(execFileSync('unzip', ['-p', path, '怎么导入.md'], { encoding: 'utf8' }), '# 说明\n');
+
+  // **解出来的文件要读得了。** 主机字节声明成 Unix 之后，外部属性的高 16 位就成了
+  // 权限位；写 0 的话解出来是 `----------`。`unzip -t` 与 `unzip -p` 都不落盘，
+  // 所以上面两条**都验不到这一格**——必须真的解到磁盘上再读一次。
+  execFileSync('unzip', ['-q', 'a.zip'], { cwd: dir });
+  assert.equal(readFileSync(join(dir, '怎么导入.md'), 'utf8'), '# 说明\n');
 });
 
 test('系统的 unzip 也拆得开，而且 -t 通过', { skip: HAS_UNZIP ? false : '这台机器上没有 unzip' }, async () => {

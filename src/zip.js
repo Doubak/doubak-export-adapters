@@ -262,7 +262,14 @@ export class ZipWriter {
       central.u32(20, e.csize);
       central.u32(24, e.usize);
       central.u16(28, e.name.length);
-      central.u32(38, 0); // external attrs
+      // **外部属性的高 16 位是 Unix 权限位，而上面刚把主机声明成了 Unix。**
+      //
+      // 写 0 的话解出来就是 `----------`：实测（同一台机器，改完主机字节之后）
+      // `unzip -t` 照样通过、`unzip` 也照样解得出来，而**解出来的文件读不了**
+      // ——`EACCES`。`-t` 不落盘，所以它验不到这一格。
+      //
+      // 0o100644 = 普通文件 + rw-r--r--。低 16 位（DOS 属性）保持 0。
+      central.u32(38, 0o100644 << 16); // external attrs：Unix 模式 0644
       central.u32(42, e.offset);
       await this._emit(central.bytes);
       await this._emit(e.name);
