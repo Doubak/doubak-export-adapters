@@ -1320,3 +1320,19 @@ test('notesVisibility 只收 0 / 1 / 2，默认是 0（跟基线走）', () => {
   assert.equal(buildNeodbNdjson(data, {}).report.notesVisibility, NOTES_VISIBILITY_DEFAULT);
   assert.throws(() => buildNeodbNdjson(data, { notesVisibility: 3 }), /notesVisibility/);
 });
+
+test('**私密 ＋「读不出来的也公开」：读不出来的仍然是私密**', () => {
+  // 面板上这两个一起选是可能的，而结果必须是私密——**读不出公私状态的日记，绝不该
+  // 比读得出来的日记还公开**。判据链「每一级只收紧、不放松」保证了这一点，这里把
+  // 那个组合本身钉死：面板那边靠禁用让它看得见，而这一层不能指望界面。
+  const d = withUnknown();
+  assert.equal(
+    visOf(buildNeodbNdjson(d, { notesVisibility: 2, unknownVisibility: 0 }), '测试一下带图的日记'),
+    2,
+  );
+  // 同理总基线收紧时也一样。
+  assert.equal(
+    visOf(buildNeodbNdjson(d, { visibility: 2, unknownVisibility: 0 }), '测试一下带图的日记'),
+    2,
+  );
+});
