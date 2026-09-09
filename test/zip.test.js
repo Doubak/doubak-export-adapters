@@ -31,6 +31,29 @@ const HAS_UNZIP = (() => {
   }
 })();
 
+/**
+ * **中文文件名，交给系统的 `unzip` 读回来。**
+ *
+ * 这个项目的导出包里就有中文名（`怎么导入.md`），而 zip 里表示「这是 UTF-8」有两处：
+ * 通用标志位第 11 位，以及中央目录里「version made by」的高字节（谁做的这个 zip）。
+ * 只写前一个是不够的——实测 Debian 的 Info-ZIP unzip 6.00（也就是 Debian / Ubuntu
+ * 上 `unzip` 的默认实现）在主机字节是 0（MS-DOS/FAT）时，会把名字当 CP437 转一遍，
+ * 拿到 `▒▒▒▒▒▒▒+▒▒▒▒.txt`。
+ *
+ * 判据必须是**外部工具**：我们自己的 `unzip()` 从来不看这个字节，写出器和读回器同源
+ * 的时候两边一起错，谁也看不出来。这与「NeoDB 收不收得下」用的是同一条判据。
+ */
+test('中文文件名：系统的 unzip 读回来一字不差', { skip: HAS_UNZIP ? false : '这台机器上没有 unzip' }, async () => {
+  const buf = await zip([{ name: '怎么导入.md', text: '# 说明\n' }]);
+  const dir = mkdtempSync(join(tmpdir(), 'doubak-zip-utf8-'));
+  const path = join(dir, 'a.zip');
+  writeFileSync(path, buf);
+  const listed = execFileSync('unzip', ['-l', path], { encoding: 'utf8' });
+  assert.match(listed, /怎么导入\.md/, 'unzip 把中文名读岔了 —— 查中央目录的 version made by');
+  // 内容也要对得上：名字读错的时候按名字取内容会直接失败。
+  assert.equal(execFileSync('unzip', ['-p', path, '怎么导入.md'], { encoding: 'utf8' }), '# 说明\n');
+});
+
 test('系统的 unzip 也拆得开，而且 -t 通过', { skip: HAS_UNZIP ? false : '这台机器上没有 unzip' }, async () => {
   // 自己写的解析器跟自己写的写出器可能一起错。真正的判据是别人的实现认不认。
   const dir = mkdtempSync(join(tmpdir(), 'doubak-zip-'));

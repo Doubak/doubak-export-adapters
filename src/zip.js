@@ -238,7 +238,21 @@ export class ZipWriter {
     for (const e of this._entries) {
       const central = header(46);
       central.u32(0, 0x02014b50);
-      central.u16(4, 20); // version made by
+      // **高字节是「谁做的这个 zip」，而它决定了文件名按什么编码读。**
+      //
+      // 0 = MS-DOS/FAT。实测（2026-09-09，Debian 的 Info-ZIP unzip 6.00 —— 也就是
+      // Debian / Ubuntu 上 `unzip` 的默认实现）：主机字节是 0 的时候，它把文件名
+      // 当 CP437 转一遍，**哪怕通用标志位第 11 位已经写着「这是 UTF-8」**。
+      // 同一个名字、同一份标志位，只改这一个字节：
+      //
+      //     host = 0（DOS）    先看这个.txt  →  ▒▒▒▒▒▒▒+▒▒▒▒.txt
+      //     host = 3（Unix）   先看这个.txt  →  先看这个.txt
+      //
+      // 这个项目的文件名有中文（`怎么导入.md`），所以这不是理论问题：用户在
+      // Linux 上解开导出的包，拿到的是一个名字乱码的文件。Python 的 zipfile
+      // 与 macOS、Windows 的解压都按标志位读，所以**只有最常用的那个命令行工具
+      // 会错**——而它恰好是这个项目的用户最可能用的那个。
+      central.u16(4, (3 << 8) | 20); // version made by：高字节 3 = Unix
       central.u16(6, 20); // version needed
       central.u16(8, e.streamed ? 0x0808 : 0x0800); // UTF-8，流式的再加数据描述符位
       central.u16(10, e.method);
