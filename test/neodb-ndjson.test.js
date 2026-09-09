@@ -1194,3 +1194,66 @@ test('豆列的 published 用最早那次观测，再抓一次也不动', () => 
   assert.equal(pub(one), T1[0]);
   assert.equal(pub(two), T1[0], '再抓一次不该改变收藏单的身份');
 });
+
+test('**`platform` 要正面证据：`unknown` 配上 `restricted_by=platform` 也不算**', () => {
+  // 这一栏是唯一会被**公开**导出的「不公开」，所以判据必须是正面证据，
+  // 而不是「有个字段这么写着」。我们自己的解析器不会产出这个组合（它只在判定
+  // private 之后才去看那条通告），但 schema 上两个字段是独立的，别的产出方、
+  // 手改过的 canonical、或者以后某一版解析器都可能凑出来。
+  // 突变验过：把判据改回只看 `restricted_by`，这一条红，别的一条都不红。
+  const bent = { ...data, longform: JSON.parse(JSON.stringify(data.longform)) };
+  const one = bent.longform.find((x) => fieldsOf(x).title === '测试一下带图的日记');
+  for (const rev of one.revisions) {
+    rev.fields.visibility = 'unknown';
+    rev.fields.restricted_by = 'platform';
+  }
+  const out = buildNeodbNdjson(bent, {});
+  const art = of(journal(out), 'Article').find((a) => a.content.name === '测试一下带图的日记');
+  assert.equal(art.visibility, 2, '认不出来的不许因为多了个 restricted_by 就被公开发出去');
+  assert.equal(out.report.restricted.find((x) => x.title === '测试一下带图的日记').by, 'unsure');
+});
+
+// ── 读不出隐私状态的那几篇，用户可以自己定 ──────────────────────────────
+
+/** 把那篇公开日记改成 `unknown`，模拟豆瓣改版之后抽取器读不出来。 */
+const withUnknown = () => {
+  const d = { ...data, longform: JSON.parse(JSON.stringify(data.longform)) };
+  const one = d.longform.find((x) => fieldsOf(x).title === '测试一下带图的日记');
+  for (const rev of one.revisions) rev.fields.visibility = 'unknown';
+  return d;
+};
+const visOf = (out, title) => of(journal(out), 'Article').find((a) => a.content.name === title)?.visibility;
+
+test('**读不出来的默认收成 2，但用户可以调**', () => {
+  const d = withUnknown();
+  assert.equal(visOf(buildNeodbNdjson(d, {}), '测试一下带图的日记'), 2, '默认要收起来');
+  assert.equal(visOf(buildNeodbNdjson(d, { unknownVisibility: 1 }), '测试一下带图的日记'), 1);
+  // **0 的意思是「跟基线走」，不是「一律公开」。** 基线本身是 1 的时候，
+  // 「不单独收紧」得到的必须是 1——写成「强制公开」的话，`--visibility=1`
+  // 配上它会把读不出来的那几篇发得比别的记录还开，而那是撤不回来的方向。
+  assert.equal(visOf(buildNeodbNdjson(d, { unknownVisibility: 0 }), '测试一下带图的日记'), undefined);
+  assert.equal(
+    visOf(buildNeodbNdjson(d, { unknownVisibility: 0, visibility: 1 }), '测试一下带图的日记'),
+    1,
+    '基线是 1 的时候，「跟基线走」不能变成 0',
+  );
+});
+
+test('**这个开关放松不了作者自己藏的那一篇**', () => {
+  // 开关只作用于「说不准」那一栏。作者的意思是明确的，没有可商量的余地——
+  // 一个能把它打开的开关，就是绕过整套非对称性的后门，而放松的方向撤不回来。
+  // 突变验过：把判据从「只有 unsure 可调」改成「restricted 都可调」，这一条红。
+  const d = withUnknown();
+  for (const v of [0, 1, 2]) {
+    assert.equal(
+      visOf(buildNeodbNdjson(d, { unknownVisibility: v }), '测试一下私密日记？'),
+      2,
+      `--unknown-visibility=${v} 不该动到作者自己设成私密的那一篇`,
+    );
+  }
+});
+
+test('unknownVisibility 只收 0 / 1 / 2', () => {
+  assert.throws(() => buildNeodbNdjson(data, { unknownVisibility: 3 }), /unknownVisibility/);
+  assert.throws(() => buildNeodbNdjson(data, { unknownVisibility: -1 }), /unknownVisibility/);
+});

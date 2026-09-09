@@ -109,3 +109,42 @@ test('豆瓣锁掉的那几篇，说明里要说「按公开导入」并且说�
   assert.match(text, /撤不回来/);
   assert.match(text, /--visibility=2/, '得给出收紧的办法，否则说了代价却没给出路');
 });
+
+test('**请人去 GitHub 报一声，只在真读不出来的时候出现**', () => {
+  // 两个方向都要测。**一句永远在的求助等于没人看的求助**——这个项目已经在
+  // 「一个永远有条目的失败列表」上栽过六次，一句常驻的 🙏 是同一个形状。
+  const with_ = (restricted) => instructions({ ...full, neodb: { ...full.neodb, restricted } });
+
+  const 读不出 = with_([{ title: '某篇', by: 'unsure', why: 'unrecognized', url: null }]);
+  assert.match(读不出, /github\.com\/Doubak\/doubak-data-parser\/issues/);
+  assert.match(读不出, /note_visibility/, '得说清楚贴什么，否则「报一声」无从下手');
+  assert.match(读不出, /不用重新抓豆瓣/, '这是这条求助最要紧的一句：代价很小');
+
+  for (const [label, r] of [
+    ['旧档案', [{ title: '某篇', by: 'unsure', why: 'legacy', url: null }]],
+    ['作者自己设的', [{ title: '某篇', by: 'author', why: null, url: null }]],
+    ['豆瓣锁的', [{ title: '某篇', by: 'platform', why: null, url: null }]],
+    ['一篇都没有', []],
+  ]) {
+    assert.ok(!with_(r).includes('doubak-data-parser/issues'), `${label}：不该请人去报`);
+  }
+});
+
+test('说明里那句「写成几」要跟 --unknown-visibility 一致，不能写死', () => {
+  // 写死 2 的话，用户改过之后这一段就成了假话，而这一段的全部作用就是让他
+  // 知道刚才发生了什么。
+  const with_ = (unknownVisibility) => instructions({
+    ...full,
+    neodb: {
+      ...full.neodb,
+      unknownVisibility,
+      restricted: [{ title: '某篇', by: 'unsure', why: 'unrecognized', url: null }],
+    },
+  });
+  assert.match(with_(2), /写成 `visibility=2`（仅提及者）/);
+  assert.match(with_(1), /写成 `visibility=1`（仅关注者）/);
+  assert.match(with_(0), /跟上面那个基线走/);
+  // 已经调成 0 的人不需要再被劝一次「可以调成 0」。
+  assert.ok(!with_(0).includes('用 `--unknown-visibility=0` 重新导出'));
+  assert.match(with_(2), /`--unknown-visibility=0` 重新导出/);
+});

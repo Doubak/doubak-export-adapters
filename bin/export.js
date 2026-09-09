@@ -22,7 +22,7 @@ import { writeFileSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { loadCanonical } from '../src/canonical.js';
 import { buildNeodb } from '../src/targets/neodb.js';
-import { buildNeodbNdjson } from '../src/targets/neodb-ndjson.js';
+import { buildNeodbNdjson, FEEDBACK_URL } from '../src/targets/neodb-ndjson.js';
 import { buildLetterboxd } from '../src/targets/letterboxd.js';
 import { buildGoodreads } from '../src/targets/goodreads.js';
 import { instructions } from '../src/instructions.js';
@@ -44,6 +44,8 @@ if (!inDir) {
   console.error('  --sample=N 只切 N 条标记出来先试（按分类和状态轮着取，见 docs/manual-testing.md）');
   console.error('  --no-shelf-history  不要从广播还原状态历史（默认是要的）');
   console.error('  --visibility=0|1|2  NDJSON 记录的可见性：0 公开(默认) / 1 仅关注者 / 2 仅提及者');
+  console.error('  --unknown-visibility=0|1|2  读不出隐私状态的日记怎么办：2 仅提及者(默认)');
+  console.error('             / 1 仅关注者 / 0 跟 --visibility 走。**作者自己设成私密的不受它影响**');
   process.exit(2);
 }
 
@@ -51,7 +53,7 @@ if (!inDir) {
 // 打成 `--no-shelf-histroy` 的话，静默忽略等于拿到跟本意相反的结果。
 {
   const KNOWN = ['--no-shelf-history', '--shelf-history'];
-  const KNOWN_PREFIX = ['--sample=', '--visibility=', '--target='];
+  const KNOWN_PREFIX = ['--sample=', '--visibility=', '--unknown-visibility=', '--target='];
   const bad = flags.filter((f) => !KNOWN.includes(f)
     && !KNOWN_PREFIX.some((p) => f.startsWith(p)));
   if (bad.length) {
@@ -83,6 +85,23 @@ const visibility = (() => {
   const v = Number(f.slice('--visibility='.length));
   if (![0, 1, 2].includes(v)) {
     console.error(`--visibility 只能是 0 / 1 / 2，收到 ${f.slice('--visibility='.length)}`);
+    process.exit(2);
+  }
+  return v;
+})();
+
+// **读不出隐私状态的那几篇，默认收成「仅提及者可见」。** 默认站在收紧这一边，
+// 理由是两个方向的代价差着一个量级：收错了，用户在 NeoDB 那一页上点一下就改回来；
+// 发错了，Article 联邦出去撤不回来。但这一栏的真相**用户比我们清楚**——他知道
+// 自己那几篇日记公不公开——所以给他一个开关，而不是替他一直捂着。
+// 只作用于「说不准」那一栏：作者自己设成私密的恒为 2，这个开关碰不到。
+const unknownVisibility = (() => {
+  const f = flags.find((a) => a.startsWith('--unknown-visibility='));
+  if (!f) return 2;
+  const raw = f.slice('--unknown-visibility='.length);
+  const v = Number(raw);
+  if (![0, 1, 2].includes(v)) {
+    console.error(`--unknown-visibility 只能是 0 / 1 / 2，收到 ${raw}`);
     process.exit(2);
   }
   return v;
@@ -132,7 +151,7 @@ const summary = {
 };
 
 if (wanted.includes('neodb')) {
-  const { files, sidecars, report } = buildNeodbNdjson(data, { shelfHistory, visibility });
+  const { files, sidecars, report } = buildNeodbNdjson(data, { shelfHistory, visibility, unknownVisibility });
   summary.neodb = report;
   summary.shelfHistory = shelfHistory;
   const dir = join(outDir, 'neodb');
@@ -181,16 +200,45 @@ if (wanted.includes('neodb')) {
       say('    ⚠ NeoDB 的 Article 会联邦出去，**这一步撤不回来**。要收起来：--visibility=2');
     }
     if (藏.length) {
-      const 名 = {
-        author: '你自己设的',
-        unsure: '这份 canonical 没有可见性字段（旧档案），重跑一次解析器就有了',
-      };
-      say(`  · ${n(藏.length)} 篇日记在豆瓣上不公开，写成 visibility=2（仅提及者）`
-        + '——**东西照样在你账号里**，只是不对外');
-      for (const x of 藏) {
-        say(`      · ${x.title}（${名[x.by] ?? x.by}）`);
-        // 认不出来那一栏的下一步是去看那一页，所以把网址给出来。
-        if (x.by === 'unsure' && x.url) say(`        ${x.url}`);
+      // **作者自己藏的和「说不准」的分两栏。** 前者恒为 2、开关碰不到；后者由
+      // `--unknown-visibility` 说了算。合成一栏的话，用户把它调成 0 之后
+      // 「只是不对外」这句话对作者那几篇仍成立、对这几篇却成了假话。
+      const 作者藏的 = 藏.filter((x) => x.by === 'author');
+      const 说不准 = 藏.filter((x) => x.by !== 'author');
+      if (作者藏的.length) {
+        say(`  · ${n(作者藏的.length)} 篇日记是**你自己设成「仅自己可见」的**，写成 visibility=2`
+          + '（仅提及者）——**东西照样在你账号里**，只是不对外');
+        for (const x of 作者藏的) say(`      · ${x.title}`);
+      }
+      if (说不准.length) {
+        const 写成 = report.unknownVisibility === 0
+          ? (visibility ? `visibility=${n(visibility)}（跟基线走）` : '公开（跟基线走）')
+          : `visibility=${n(report.unknownVisibility)}`;
+        say(`  · ${n(说不准.length)} 篇日记**读不出在豆瓣上公不公开**，写成 ${写成}`);
+        // 两个成因下一步相反：旧档案重跑一次解析器就有了，豆瓣改版那种重跑
+        // 救不回来、要改抽取器。合成一句必然把一部分人支去做做不成的事。
+        for (const x of 说不准) {
+          say(`      · ${x.title}（${x.why === 'unrecognized'
+            ? '**隐私状态没能读出来**，多半是豆瓣改了日记页的结构'
+            : '这份 canonical 没有可见性字段（旧档案），重跑一次解析器就有了'}）`);
+          // 认不出来那一栏的下一步是去看那一页，所以把网址给出来。
+          if (x.url) say(`        ${x.url}`);
+        }
+        const 看不懂 = 说不准.filter((x) => x.why === 'unrecognized');
+        if (看不懂.length) {
+          // **主动请人报一声。** 碰上的人是唯一能告诉我们的人，而那几页已经如实
+          // 躺在他自己的档案里——改好抽取器重跑就救得回来。不说的话它会一直安静
+          // 按不公开处理下去，而「安静」正是这一条最贵的地方。
+          say(`    ⚠ 其中 ${n(看不懂.length)} 篇是**读不出来**的。**重跑解析器救不回来**，要改的是抽取器。`);
+          say(`      🙏 麻烦到 ${FEEDBACK_URL} 报一声，把解析时那条 \`note_visibility\` 告警贴上`);
+          say('      （里面带着那一页上长得像隐私标记的类名）。改好之后你这份档案重跑一遍就能');
+          say('      救回来，**不用重新抓豆瓣**——那几页本来就在档案里。');
+        }
+        if (report.unknownVisibility !== 0) {
+          say('    · 「读不出来」不是「确认公开」，所以默认收起来：收错了在 NeoDB 那一页点一下');
+          say('      就改回来，发错了联邦出去撤不回来。确定这几篇本来就是公开的，');
+          say('      用 --unknown-visibility=0 让它们跟基线走。');
+        }
       }
     }
   }
