@@ -172,8 +172,22 @@ export class ZipWriter {
     });
   }
 
-  /** @param {string} name @param {AsyncIterable<Uint8Array> | Iterable<Uint8Array>} chunks */
-  async _addStreamed(name, chunks) {
+  /**
+   * 开一个成员，**由调用方一块一块往里推**。
+   *
+   * 这是流式那条路的原语，`add()` 收可迭代对象的那半边就建立在它上面。
+   * 两种形状都要有，是因为两边的调用方天生不同向：导出那条路是「写出器把字节推给
+   * 我们」（`{write, close}`，见扩展的 `bundle/exporter.js`），而循环遍历是拉。
+   * 只留拉的那一半，就得在中间架一个带背压的队列——**而那是纯粹为了形状而加的一层
+   * 会出错的东西**。
+   *
+   * @param {string} name
+   * @returns {Promise<{write: (chunk: Uint8Array) => Promise<void>, close: () => Promise<void>}>}
+   */
+  async beginMember(name) {
+    if (this._names.has(name)) throw new Error(`zip 里出现了重复的成员名：${name}`);
+    this._names.add(name);
+
     const nameBuf = enc.encode(name);
     const offset = this._offset;
     // 本地头里三个字段先写 0，标志位第 3 位置 1，正文之后补数据描述符。
@@ -182,24 +196,40 @@ export class ZipWriter {
 
     let crc = -1;
     let size = 0;
-    for await (const chunk of chunks) {
-      if (!(chunk instanceof Uint8Array)) throw new Error(`${name} 的分块不是 Uint8Array`);
-      crc = crc32Update(chunk, crc);
-      size += chunk.length;
-      await this._emit(chunk);
-    }
-    const finalCrc = crcFinal(crc);
+    let closed = false;
 
-    const dd = header(16);
-    dd.u32(0, 0x08074b50);
-    dd.u32(4, finalCrc);
-    dd.u32(8, size);
-    dd.u32(12, size);
-    await this._emit(dd.bytes);
+    return {
+      write: async (chunk) => {
+        if (closed) throw new Error(`${name} 已经收尾了，不能再写`);
+        if (!(chunk instanceof Uint8Array)) throw new Error(`${name} 的分块不是 Uint8Array`);
+        crc = crc32Update(chunk, crc);
+        size += chunk.length;
+        await this._emit(chunk);
+      },
+      close: async () => {
+        if (closed) return;
+        closed = true;
+        const finalCrc = crcFinal(crc);
+        const dd = header(16);
+        dd.u32(0, 0x08074b50);
+        dd.u32(4, finalCrc);
+        dd.u32(8, size);
+        dd.u32(12, size);
+        await this._emit(dd.bytes);
+        this._entries.push({
+          name: nameBuf, method: 0, crc: finalCrc, csize: size, usize: size, offset, streamed: true,
+        });
+      },
+    };
+  }
 
-    this._entries.push({
-      name: nameBuf, method: 0, crc: finalCrc, csize: size, usize: size, offset, streamed: true,
-    });
+  /** @param {string} name @param {AsyncIterable<Uint8Array> | Iterable<Uint8Array>} chunks */
+  async _addStreamed(name, chunks) {
+    // `add()` 已经登记过名字了，这里要让 `beginMember` 自己去登记。
+    this._names.delete(name);
+    const m = await this.beginMember(name);
+    for await (const chunk of chunks) await m.write(chunk);
+    await m.close();
   }
 
   /** 写中央目录与结尾。**调用之后不能再 add。** */

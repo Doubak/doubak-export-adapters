@@ -192,3 +192,45 @@ describe('ZipWriter：流式那条路', () => {
     assert.match(src, /new ZipWriter\(/, 'zip() 没有走 ZipWriter');
   });
 });
+
+describe('ZipWriter.beginMember：推的那半边', () => {
+  const collect = async (fn) => {
+    /** @type {Uint8Array[]} */
+    const parts = [];
+    const w = new ZipWriter({ write: (c) => { parts.push(c); }, deflateRaw });
+    await fn(w);
+    await w.finish();
+    const out = new Uint8Array(parts.reduce((n, p) => n + p.length, 0));
+    let at = 0;
+    for (const p of parts) { out.set(p, at); at += p.length; }
+    return out;
+  };
+
+  test('推进去的与迭代进去的，产出逐字节相同', async () => {
+    // 两种形状必须是**同一条路**。分成两份实现的话，有一天其中一条会开始写出
+    // 不一样的 zip，而两边各自的测试都还是绿的。
+    const chunks = [new Uint8Array([1, 2, 3]), new Uint8Array([4, 5])];
+    const pulled = await collect((w) => w.add('x', chunks));
+    const pushed = await collect(async (w) => {
+      const m = await w.beginMember('x');
+      for (const c of chunks) await m.write(c);
+      await m.close();
+    });
+    assert.deepEqual(pulled, pushed);
+  });
+
+  test('收尾之后再写要抛', async () => {
+    await assert.rejects(() => collect(async (w) => {
+      const m = await w.beginMember('x');
+      await m.close();
+      await m.write(new Uint8Array([1]));
+    }), /已经收尾了/);
+  });
+
+  test('重名照样拒绝', async () => {
+    await assert.rejects(() => collect(async (w) => {
+      await (await w.beginMember('x')).close();
+      await w.beginMember('x');
+    }), /重复的成员名/);
+  });
+});
