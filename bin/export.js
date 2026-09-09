@@ -44,8 +44,11 @@ if (!inDir) {
   console.error('  --sample=N 只切 N 条标记出来先试（按分类和状态轮着取，见 docs/manual-testing.md）');
   console.error('  --no-shelf-history  不要从广播还原状态历史（默认是要的）');
   console.error('  --visibility=0|1|2  NDJSON 记录的可见性：0 公开(默认) / 1 仅关注者 / 2 仅提及者');
-  console.error('  --unknown-visibility=0|1|2  读不出隐私状态的日记怎么办：2 仅提及者(默认)');
-  console.error('             / 1 仅关注者 / 0 跟 --visibility 走。**作者自己设成私密的不受它影响**');
+  console.error('  --notes-visibility=0|1|2    日记这一档：0 跟 --visibility 走(默认，即公开)');
+  console.error('             / 1 仅关注者 / 2 仅提及者。**只管日记，影评书评不在内**');
+  console.error('  --unknown-visibility=0|1|2  其中看不出公不公开的那几篇：2 仅提及者(默认)');
+  console.error('             / 1 仅关注者 / 0 跟 --notes-visibility 走');
+  console.error('             三级只收紧不放松；**作者自己设成私密的三个都动不了**');
   process.exit(2);
 }
 
@@ -53,7 +56,8 @@ if (!inDir) {
 // 打成 `--no-shelf-histroy` 的话，静默忽略等于拿到跟本意相反的结果。
 {
   const KNOWN = ['--no-shelf-history', '--shelf-history'];
-  const KNOWN_PREFIX = ['--sample=', '--visibility=', '--unknown-visibility=', '--target='];
+  const KNOWN_PREFIX = ['--sample=', '--visibility=', '--notes-visibility=',
+    '--unknown-visibility=', '--target='];
   const bad = flags.filter((f) => !KNOWN.includes(f)
     && !KNOWN_PREFIX.some((p) => f.startsWith(p)));
   if (bad.length) {
@@ -87,6 +91,22 @@ const visibility = (() => {
   const v = Number(f.slice('--visibility='.length));
   if (![0, 1, 2].includes(v)) {
     console.error(`--visibility 只能是 0 / 1 / 2，收到 ${f.slice('--visibility='.length)}`);
+    process.exit(2);
+  }
+  return v;
+})();
+
+// **日记这一档。** 默认 0 = 跟总基线走，也就是照旧公开——改的不是默认值，是把这个
+// 选择摆到看得见的地方（扩展面板上是一组单选，就在导出按钮上面）。日记在 NeoDB 上
+// 会变成「文章」并联邦出去，而那一步撤不回来，所以它值得一档自己的开关：为护住几篇
+// 日记而把几千条标记一起收紧，代价大到没人会付，等于没有这个能力。
+const notesVisibility = (() => {
+  const f = flags.find((a) => a.startsWith('--notes-visibility='));
+  if (!f) return undefined;  // 默认值只住在 NOTES_VISIBILITY_DEFAULT
+  const raw = f.slice('--notes-visibility='.length);
+  const v = Number(raw);
+  if (![0, 1, 2].includes(v)) {
+    console.error(`--notes-visibility 只能是 0 / 1 / 2，收到 ${raw}`);
     process.exit(2);
   }
   return v;
@@ -153,7 +173,7 @@ const summary = {
 };
 
 if (wanted.includes('neodb')) {
-  const { files, sidecars, report } = buildNeodbNdjson(data, { shelfHistory, visibility, unknownVisibility });
+  const { files, sidecars, report } = buildNeodbNdjson(data, { shelfHistory, visibility, notesVisibility, unknownVisibility });
   summary.neodb = report;
   summary.shelfHistory = shelfHistory;
   const dir = join(outDir, 'neodb');
@@ -190,16 +210,31 @@ if (wanted.includes('neodb')) {
   if (visibility) {
     say(`  · 所有记录写了 visibility=${n(visibility)}（${visibility === 1 ? '仅关注者' : '仅提及者'}）`);
   }
+  if (report.notesVisibility) {
+    // 只在用户真的收紧了日记时说——默认那一档不必占一行。
+    say(`  · 日记这一档写了 visibility=${n(report.notesVisibility)}`
+      + `（${report.notesVisibility === 1 ? '仅关注者' : '仅提及者'}），影评书评不在内`);
+  }
   if (report.restricted?.length) {
     // **两边分开说，因为处置正好相反。** 「仅自己可见」有两个成因：作者自己藏的，
     // 和豆瓣锁掉的。合成一句话就是拿豆瓣的审查冒充用户的意愿。
     const 锁 = report.restricted.filter((x) => x.by === 'platform');
     const 藏 = report.restricted.filter((x) => x.by !== 'platform');
     if (锁.length) {
-      say(`  · ${n(锁.length)} 篇日记是**被豆瓣锁成「仅自己可见」的**，这一份里**按公开导入**`
-        + '——它本来就是公开的，是豆瓣把它关掉的');
+      // **这一句必须跟着日记那一档走。** 写死「按公开导入」的话，用户用
+      // `--notes-visibility=2` 收紧之后它就成了假话——而这一段的全部作用就是让他
+      // 知道自己正在把什么重新发出去。同理那条「撤不回来」的警告：已经收起来了
+      // 就不必再吓一次，还给出一个他刚用过的开关。
+      const 公开着 = !report.notesVisibility && !visibility;
+      say(`  · ${n(锁.length)} 篇日记是**被豆瓣锁成「仅自己可见」的**，`
+        + (公开着 ? '这一份里**按公开导入**——它本来就是公开的，是豆瓣把它关掉的'
+          : `这一份里跟日记那一档一起写成 visibility=${n(report.notesVisibility || visibility)}`
+            + '——它本来是公开的（豆瓣把它关掉的），想重新公开就别收紧日记那一档'));
       for (const x of 锁) say(`      · ${x.title}`);
-      say('    ⚠ NeoDB 的 Article 会联邦出去，**这一步撤不回来**。要收起来：--visibility=2');
+      if (公开着) {
+        say('    ⚠ NeoDB 的 Article 会联邦出去，**这一步撤不回来**。'
+          + '要收起来：--notes-visibility=2（只收日记）或 --visibility=2（全收）');
+      }
     }
     if (藏.length) {
       // **作者自己藏的和「说不准」的分两栏。** 前者恒为 2、开关碰不到；后者由

@@ -8,18 +8,34 @@
 
 ```sh
 node bin/export.js <canonical 目录> [输出目录] [--target=…] [--sample=N] [--no-shelf-history]
-#              [--visibility=0|1|2] [--unknown-visibility=0|1|2]
+#              [--visibility=0|1|2] [--notes-visibility=0|1|2] [--unknown-visibility=0|1|2]
 node tools/check-export.mjs <canonical 目录> <导出目录>   # 上传前离线自查
 node tools/check-roundtrip.mjs <导出目录> <NeoDB 导出的 zip>   # 导入后跟服务器对一遍
-npm test    # node --test，零依赖，不需要 npm install（209 个测试）
+npm test    # node --test，零依赖，不需要 npm install（214 个测试）
 ```
 
 `--target` 可选 `neodb`（NDJSON）、`neodb_csv`（旧的 CSV）、`letterboxd`、`goodreads`；
 不写的话出前面三个，**`neodb_csv` 要显式要**。
 
-`--visibility` 是所有 NDJSON 记录的基线（`0` 公开，默认）；`--unknown-visibility` 只管
-**读不出隐私状态的那几篇日记**（默认 `2` 仅提及者，`0` 让它们跟基线走）。后者动不了
-「作者自己设成私密」的那一栏——见下面〈在豆瓣上「仅自己可见」的日记〉。
+可见性是**三级，每一级的 `0` 都是「跟上一级走」，所以每一级只收紧、不放松**：
+
+```
+--visibility          所有 NDJSON 记录的总基线（默认 0 公开）
+  └ --notes-visibility    日记这一档（默认 0；**影评书评不在内**）
+      └ --unknown-visibility  其中看不出公不公开的那几篇（默认 2 仅提及者）
+```
+
+写成「强制公开」的话，`--visibility=1 --notes-visibility=0` 会把日记发得**比别的记录
+还开**；同理 `--unknown-visibility=0` 继承的是日记那一档而不是总基线，否则
+`--notes-visibility=2 --unknown-visibility=0` 会让读不出来的那几篇比读得出来的还公开。
+
+**三个开关都动不了「作者自己在豆瓣上设成私密」的那一栏**（恒为 `2`）——一个能放松它的
+开关就是绕过整套非对称性的后门。见下面〈在豆瓣上「仅自己可见」的日记〉。
+
+日记单独一档是被一条真实反馈逼出来的：有人把日记导进 NeoDB 之后发现全都公开了，
+花了一个小时逐篇去锁、去删。此前想护住几篇日记，只能用 `--visibility=2` 把几千条标记
+一起收紧——**代价大到没人会付，等于没有这个能力**。扩展面板上同一件事是导出按钮上面
+一组常驻的单选（公开／私密），默认公开，旁边写着「会变成文章、会联邦、无法撤回」。
 
 需要 Node ≥ 20。**不联网**——产出是几个文件，什么时候上传、上不上传，都不影响档案。
 

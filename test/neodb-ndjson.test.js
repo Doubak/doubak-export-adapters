@@ -2,7 +2,7 @@ import { readFile } from 'node:fs/promises';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { loadCanonical, fieldsOf } from '../src/canonical.js';
-import { buildNeodbNdjson, UNKNOWN_VISIBILITY_DEFAULT } from '../src/targets/neodb-ndjson.js';
+import { buildNeodbNdjson, UNKNOWN_VISIBILITY_DEFAULT, NOTES_VISIBILITY_DEFAULT } from '../src/targets/neodb-ndjson.js';
 import { buildNeodb } from '../src/targets/neodb.js';
 import { sample } from '../src/sample.js';
 import { FIXTURE, fileNamed, parseCsvObjects } from './helpers.js';
@@ -1275,4 +1275,48 @@ test('**默认值只许有一处，宿主不许各兜一个**', async () => {
   const cli = await readFile(new URL('../bin/export.js', import.meta.url), 'utf8');
   assert.match(cli, /--unknown-visibility='\)\);\n\s*if \(!f\) return undefined;/);
   assert.doesNotMatch(cli, /startsWith\('--unknown-visibility='\)\);\n\s*if \(!f\) return [0-9]/);
+});
+
+// ── 日记这一档（--notes-visibility） ────────────────────────────────────
+
+test('**三级只收紧不放松**，每一级的 0 是「跟上一级走」', () => {
+  // visibility ⊃ notesVisibility ⊃ unknownVisibility。写成「强制公开」的话，
+  // `--visibility=1 --notes-visibility=0` 会把日记发得**比别的记录还开**，
+  // 而那是撤不回来的方向。
+  const d = withUnknown();
+  const 普通 = '豆瓣更换海外手机号显示“不可预期状态”的解决方案';
+  const 看不出 = '测试一下带图的日记';
+  assert.equal(visOf(buildNeodbNdjson(d, {}), 普通), undefined, '默认照旧公开');
+  assert.equal(visOf(buildNeodbNdjson(d, { notesVisibility: 2 }), 普通), 2);
+  assert.equal(visOf(buildNeodbNdjson(d, { visibility: 1 }), 普通), 1, '不给日记那一档就跟总基线');
+  assert.equal(visOf(buildNeodbNdjson(d, { visibility: 1, notesVisibility: 2 }), 普通), 2);
+  // **`--unknown-visibility=0` 继承的是日记那一档，不是总基线。** 否则
+  // `--notes-visibility=2 --unknown-visibility=0` 会让「看不出来」的那几篇
+  // 比读得出来的日记还公开——正好是反的。突变验过。
+  assert.equal(
+    visOf(buildNeodbNdjson(d, { notesVisibility: 2, unknownVisibility: 0 }), 看不出), 2,
+    '看不出来的不该比日记那一档还松',
+  );
+});
+
+test('**日记那一档不动影评书评**', () => {
+  // 面板上那个控件写的就是「日记」。影评书评在豆瓣上本来就挂在作品页上给所有人
+  // 看、豆瓣也没给它们私密这个设置——一起收起来是拿用户没做过的决定改他的东西。
+  const out = buildNeodbNdjson(data, { notesVisibility: 2 });
+  for (const r of of(journal(out), 'Review')) {
+    assert.ok(!('visibility' in r), `影评「${r.content.name}」不该跟着日记一起收起来`);
+  }
+  for (const a of of(journal(out), 'Article')) assert.equal(a.visibility, 2);
+});
+
+test('**日记那一档也放松不了作者自己藏的那一篇**', () => {
+  for (const v of [0, 1, 2]) {
+    assert.equal(visOf(buildNeodbNdjson(withUnknown(), { notesVisibility: v }), '测试一下私密日记？'), 2);
+  }
+});
+
+test('notesVisibility 只收 0 / 1 / 2，默认是 0（跟基线走）', () => {
+  assert.equal(NOTES_VISIBILITY_DEFAULT, 0);
+  assert.equal(buildNeodbNdjson(data, {}).report.notesVisibility, NOTES_VISIBILITY_DEFAULT);
+  assert.throws(() => buildNeodbNdjson(data, { notesVisibility: 3 }), /notesVisibility/);
 });
