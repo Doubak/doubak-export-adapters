@@ -54,7 +54,7 @@ node bin/export.js ~/downloads/canonical ~/downloads/export
 > 导出统计中的详细说明：
 > - 状态历史中，有 1688 条与标记条目的初始状态重合，已直接并入标记所在行以补齐评分与评语；另有 657 条广播未附带评分或文本内容，依规整略过；
 > - 游戏条目中，归档收录 605 个，实际导出 598 个，差异的 7 个为豆瓣官方已彻底下线且缺少可访问 URL 的条目；
-> - 导出报告不仅列出成功转换的条目数，还会完整披露由于平台能力限制而无法导出的条目清单（如生成 `neodb-needs-check.csv` 与 `letterboxd-needs-check.csv`），杜绝静默遗漏。
+> - 导出报告会统计因平台能力限制而无法导出的条目数量，并针对部分需要人工处理的异常生成明细文件（如 `neodb-needs-check.csv` 与 `letterboxd-needs-check.csv`），避免静默遗漏。
 
 ---
 
