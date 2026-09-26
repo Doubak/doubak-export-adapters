@@ -60,7 +60,7 @@ node bin/export.js ~/downloads/canonical ~/downloads/export
 
 ## NeoDB 导出实现：NDJSON 架构与语义保全
 
-NeoDB 官方提供了原生的 NDJSON 归档导入规范。相比旧版 CSV，NDJSON 格式支持了 CSV 结构无法承载的核心维度：**豆列收藏单**、**不挂载具体作品的独立日记**、**细粒度记录可见性**，以及**状态演变历史**。
+NeoDB 原生支持其自身使用的 NDJSON 归档导入格式。相比旧版 CSV，NDJSON 格式支持了 CSV 结构无法承载的核心维度：**豆列收藏单**、**不挂载具体作品的独立日记**、**细粒度记录可见性**，以及**状态演变历史**。
 
 ### 核心特性与适配决策
 
