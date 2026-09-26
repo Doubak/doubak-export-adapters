@@ -14,7 +14,7 @@ node tools/check-roundtrip.mjs <导出目录> <NeoDB 导出的 zip>  # 导入后
 npm test                                                     # 运行测试套件（使用 Node 内置 test runner，零外部依赖）
 ```
 
-- `--target`：可选 `neodb`（推荐的 NDJSON 格式）、`neodb_csv`（旧版 CSV 格式）、`letterboxd`、`goodreads`；若未显式指定，默认同时产出前三者（`neodb_csv` 需显式指定）。
+- `--target`：可选 `neodb`（推荐的 NDJSON 格式）、`neodb_csv`（旧版 CSV 格式）、`letterboxd`、`goodreads`；若未显式指定，默认同时产出 `neodb`、`letterboxd` 与 `goodreads`（`neodb_csv` 需显式指定）。
 - **三级可见性控制模型**：每一级的取值 `0` 均表示继承上一级设定，因此层级间遵循“仅收紧、不放松”的继承安全原则：
   ```
   --visibility            全量 NDJSON 记录的默认基础可见性（默认 0，即公开）
