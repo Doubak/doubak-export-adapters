@@ -243,7 +243,7 @@ node tools/check-roundtrip.mjs <我们的导出目录或 zip> <NeoDB 导出的 z
 | Goodreads | 兼容 Goodreads 官方导入规范的 14 项标准字段定义 |
 
 代码核验明确的关键细节：
-- NeoDB 书评 CSV 允许表头存在重复的 `title`（DictReader 遵循后项生效规则，分别用于作品名称定位与书评标题赋值）；
+- NeoDB 书评 CSV 的表头必须保留两个 `title`：`csv.DictReader` 会让后一个同名列覆盖前一个，因此 `row["title"]` 实际只读取第 5 列的书评标题；第 1 列作品名不参与匹配，作品通过 `links` 定位；
 - NeoDB 文件名分类主要用于路由分发，条目匹配以链接为准，但文件名必须匹配官方预设的枚举集合。
 
 ## 豆瓣的「电影」里三成是剧集
