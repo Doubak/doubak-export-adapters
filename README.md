@@ -29,7 +29,7 @@ npm test                                                     # 运行测试套�
 node bin/export.js ~/downloads/canonical ~/downloads/export
 ```
 
-执行后产出目录中除了各目标平台的文件外，还会附带一份 [`怎么导入.md`](docs/manual-testing.md)，详细列出本次导出的具体条目统计与各平台的实际导入步骤。建议初次使用时先通过 `--sample=20` 抽取样本并在目标平台小范围验证，确认无误后再执行全量导入。
+执行后产出目录中除了各目标平台的文件外，还会附带一份 `怎么导入.md`，详细列出本次导出的具体条目统计与各平台的实际导入步骤。完整的首次导入检查流程另见 [`docs/manual-testing.md`](docs/manual-testing.md)。建议初次使用时先通过 `--sample=20` 抽取样本并在目标平台小范围验证，确认无误后再执行全量导入。
 
 ---
 
