@@ -70,7 +70,7 @@ describe('删掉再重标', () => {
     assert.equal(r.superseded, 0, '没并却报了并，那句提示就是假的');
   });
 
-  test('空输入不炸', () => {
+  test('输入为空时不抛出异常', () => {
     assert.deepEqual(mergeReMarks([]), { marks: [], superseded: 0 });
     assert.deepEqual(mergeReMarks(undefined), { marks: [], superseded: 0 });
   });

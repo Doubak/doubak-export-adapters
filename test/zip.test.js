@@ -206,7 +206,7 @@ describe('ZipWriter：流式那条路', () => {
     );
   });
 
-  test('超过 4 GB 要**抛**，不许悄悄写出一个坏 zip', async () => {
+  test('超过 4 GB 限制时明确抛出异常，禁止静默生成损坏的 zip 文件', async () => {
     // ZIP 不带 ZIP64 时上限就是 4 GB。悄悄越过去的后果是用户以为导出成功了，
     // 几个月后才发现解不开——而那时原档案可能已经删了。
     const w = new ZipWriter({ write: () => {}, deflateRaw });
