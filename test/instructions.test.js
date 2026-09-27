@@ -70,7 +70,7 @@ test('说明里明确写着「这不是备份」', () => {
   assert.match(text, new RegExp(`\\*\\*${full.multiRevisionMarks} 条标记改过\\*\\*`));
 });
 
-test('数字全是 0 的时候也不炸', () => {
+test('各项统计数值均为 0 时不抛出异常', () => {
   const text = instructions({ doulists: 0, multiRevisionMarks: 0 });
   assert.match(text, /怎么把这些文件导进去/);
 });
@@ -98,7 +98,7 @@ test('**「认不出来」和「旧档案」要给出各自的下一步，而不
   assert.ok(!stale.includes('旧档案'), '豆瓣改版跟档案新旧没关系，这么写会把人支错方向');
 });
 
-test('豆瓣锁掉的那几篇，说明里要说「按公开导入」并且说撤不回来', () => {
+test('豆瓣锁定的日记在说明中明确标注「按公开导入」且不可撤销', () => {
   // 这一份是被公开导出的那一份，所以恰恰更要说：Article 会联邦出去。
   const text = instructions({
     ...full,
@@ -110,7 +110,7 @@ test('豆瓣锁掉的那几篇，说明里要说「按公开导入」并且说�
   assert.match(text, /--visibility=2/, '得给出收紧的办法，否则说了代价却没给出路');
 });
 
-test('**请人去 GitHub 报一声，只在真读不出来的时候出现**', () => {
+test('**引导用户提交 GitHub 反馈仅在确实无法解析时显示**', () => {
   // 两个方向都要测。**一句永远在的求助等于没人看的求助**——这个项目已经在
   // 「一个永远有条目的失败列表」上栽过六次，一句常驻的 🙏 是同一个形状。
   const with_ = (restricted) => instructions({ ...full, neodb: { ...full.neodb, restricted } });

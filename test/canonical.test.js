@@ -19,7 +19,7 @@ test('当前状态按 last_observed_at 取，不按数组下标', () => {
   assert.equal(fieldsOf(record).status, 'done');
 });
 
-test('没有 revision 的记录不炸，给一个空 fields', () => {
+test('缺少 revision 的记录不抛出异常，返回空的 fields 对象', () => {
   assert.equal(latest({ revisions: [] }), null);
   assert.deepEqual(fieldsOf({ revisions: [] }), {});
   assert.deepEqual(fieldsOf(null), {});

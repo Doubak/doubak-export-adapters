@@ -236,7 +236,7 @@ test('用户写的字一个不少地过去了', () => {
   assert.ok(checked >= 10, `只核了 ${checked} 条短评`);
 });
 
-test('没有标记日期的那条不写 published，而不是编一个', () => {
+test('缺少标记日期时不写入 published 字段，禁止虚构时间', () => {
   const marks = of(journal(plain), 'ShelfMember');
   const without = marks.filter((m) => !('published' in m.content));
   assert.equal(without.length, plain.report.noMarkedAt);
@@ -293,7 +293,7 @@ test('`--visibility` 收紧时，豆瓣锁的那篇跟着基线走，不例外',
   assert.equal(锁.visibility, 2);
 });
 
-test('**正文一个字都不许少** —— 收起来的是可见性，不是内容', () => {
+test('**正文内容必须完整保留** —— 仅调整可见性级别，不得删减内容', () => {
   // 「不公开」与「不导出」是两件事。这份存档存在的理由正是留住豆瓣拿掉的东西，
   // 而把它整条丢掉就是替豆瓣把它二次消音——那比公开导入更隐蔽，因为一条被静默
   // 丢掉的记录不留任何痕迹给人发现。
@@ -301,7 +301,7 @@ test('**正文一个字都不许少** —— 收起来的是可见性，不是�
   assert.ok(锁.content.source.content.includes('An Unfinished Film'), '正文没了');
 });
 
-test('**评论恒为 null，那是「不适用」不是「不知道」，不许被收起来**', () => {
+test('**评论恒为 null 时判定为「不适用」而非「未知」，禁止收紧隐藏**', () => {
   // 豆瓣压根没给评论这个功能（实测 2 篇评论页上「私密」「仅自己」「可见」一个字
   // 都没有，连容器都不存在）。并进「不知道」的话，每个人的每一篇影评书评都会被
   // 收成 visibility=2 —— 而它们在豆瓣上本来就挂在作品页上给所有人看。
@@ -884,7 +884,7 @@ test('并进去的是广播冻住的那一版，不是标记现在这一版', ()
   assert.equal(logs[0].metadata.rating_grade, 10);
 });
 
-test('广播只冻住了星，并上去也不会把标记的短评抹掉', () => {
+test('广播仅固定评分星级时，合并后不得覆盖清除标记原有短评', () => {
   // `update_or_create(defaults={"metadata": …})` 是**整块覆盖**，不是合并。
   // 只写 rating_grade 过去，`_update_log_entry` 刚写进那一行的短评就没了。
   const logs = logsOf(tiny({
@@ -896,7 +896,7 @@ test('广播只冻住了星，并上去也不会把标记的短评抹掉', () =>
   assert.equal(logs[0].metadata.comment_text, '标记上的短评', '短评保持 NeoDB 本来会写的那份');
 });
 
-test('广播什么都没冻住，那一条整个不写——写个空的过去等于把标记的短评抹掉', () => {
+test('广播未固定任何属性时整条忽略 —— 避免空记录覆盖清除标记原有短评', () => {
   const d = tiny({
     subjects: [MOVIE],
     marks: [markedThatDay({ comment: '标记上的短评' })],
@@ -968,7 +968,7 @@ test('整份档案里没有一条历史会跟标记那件事撞成两行', () =>
   assert.ok(checked > 0, '样本里该有并进标记那一行的历史，一条都没扫到说明这个检查空转了');
 });
 
-test('没有广播的档案开着 --shelf-history 也不炸', () => {
+test('无广播数据的档案在开启 --shelf-history 时正常运行，不抛出异常', () => {
   const d = tiny({ subjects: [MOVIE], marks: [markOn({ status: 'done' })] });
   const built = buildNeodbNdjson(d, { shelfHistory: true });
   assert.equal(built.report.shelfLogs, 0);
@@ -1169,7 +1169,7 @@ test('档案里没有摘要时退回比字段值，而不是当成「变过」',
   assert.equal(of(journal(buildNeodbNdjson(d)), 'Comment')[0].content.updated, T1[0]);
 });
 
-test('没有观测时间就不写 updated，而不是编一个', () => {
+test('缺少观测时间时不写入 updated 字段，禁止虚构时间', () => {
   const d = tiny({ subjects: [MOVIE] });
   d.marks = [{
     medium: 'movie',
@@ -1259,7 +1259,7 @@ test('unknownVisibility 只收 0 / 1 / 2', () => {
   assert.throws(() => buildNeodbNdjson(data, { unknownVisibility: -1 }), /unknownVisibility/);
 });
 
-test('**默认值只许有一处，宿主不许各兜一个**', async () => {
+test('**默认配置仅允许唯一定义，禁止各宿主单独提供兜底值**', async () => {
   // 两个宿主（CLI 与扩展面板）都要在「用户没选」的时候用这个默认值。各写一个 `2`
   // 的话，改的时候必然漏掉一个，而**漏掉是静默的**：一个宿主收着、另一个发出去，
   // 两边都不报错——正是「一条流水线，两个宿主」里最贵的那一半。

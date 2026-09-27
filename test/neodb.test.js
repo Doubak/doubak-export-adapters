@@ -98,7 +98,7 @@ test('豆瓣五种 medium 的 URL，NeoDB 的五个站点规则都认', () => {
   assert.ok(checked >= 20, `只核了 ${checked} 条链接，样本太小`);
 });
 
-test('不挂作品的日记没有去处，数出来而不是硬塞', () => {
+test('未关联作品的日记明确统计计数，避免强行写入', () => {
   assert.equal(report.unattachedLongform, 4);
   assert.equal(report.reviews, 2);
 });
