@@ -59,3 +59,20 @@ test('坏行报出行号，不是默默跳过', () => {
   writeFileSync(join(dir, 'marks.ndjson'), '{"medium":"movie"}\n\n{ 这不是 JSON\n');
   assert.throws(() => loadCanonical(dir), /第 3 行/);
 });
+
+test('存在相册与小组 NDJSON 时正常读入', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'doubak-canon-'));
+  writeFileSync(join(dir, 'marks.ndjson'), '{"medium":"movie","subject":{"id":"1"},"revisions":[]}\n');
+  writeFileSync(join(dir, 'subjects.ndjson'), '{"medium":"movie","id":"1"}\n');
+  writeFileSync(join(dir, 'albums.ndjson'), '{"upstream_id":"a1","revisions":[]}\n');
+  writeFileSync(join(dir, 'group_topics.ndjson'), '{"upstream_id":"t1","revisions":[]}\n');
+  writeFileSync(join(dir, 'group_joins.ndjson'), '{"group_id":"g1"}\n');
+
+  const data = loadCanonical(dir);
+  assert.equal(data.albums.length, 1);
+  assert.equal(data.albums[0].upstream_id, 'a1');
+  assert.equal(data.group_topics.length, 1);
+  assert.equal(data.group_topics[0].upstream_id, 't1');
+  assert.equal(data.group_joins.length, 1);
+  assert.equal(data.group_joins[0].group_id, 'g1');
+});

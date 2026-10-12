@@ -35,13 +35,16 @@ export { latest, fieldsOf, mergeReMarks, canonicalShape } from './record.js';
 import { readFileSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 
-/** canonical 目录里可能有的文件。缺哪个都不算错——豆列是后加的，老目录里没有。 */
+/** canonical 目录里可能有的文件。缺哪个都不算错——豆列、相册与小组是后加的，老目录里没有。 */
 const FILES = {
   marks: 'marks.ndjson',
   subjects: 'subjects.ndjson',
   longform: 'longform.ndjson',
   doulists: 'doulists.ndjson',
   broadcasts: 'broadcasts.ndjson',
+  albums: 'albums.ndjson',
+  group_topics: 'group_topics.ndjson',
+  group_joins: 'group_joins.ndjson',
 };
 
 /**
