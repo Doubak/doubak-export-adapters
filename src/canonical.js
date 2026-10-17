@@ -28,11 +28,11 @@
 // `latest` / `fieldsOf` 在 record.js 里（纯计算，扩展也要用）。这里**再导出**
 // 而不是让调用方改 import：它们本来就是「读 canonical」的一部分，换个文件住
 // 是我们的事，不该变成二十个调用点的事。
-import { canonicalShape } from './record.js';
+import { canonicalShape, accountsInCanonical, filterCanonicalByAccount } from './record.js';
 
-export { latest, fieldsOf, mergeReMarks, canonicalShape } from './record.js';
+export { latest, fieldsOf, mergeReMarks, canonicalShape, accountsInCanonical, filterCanonicalByAccount } from './record.js';
 
-import { readFileSync, existsSync } from 'node:fs';
+import { readFileSync, existsSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 
 /** canonical 目录里可能有的文件。缺哪个都不算错——豆列、相册与小组是后加的，老目录里没有。 */
@@ -47,6 +47,46 @@ const FILES = {
   group_joins: 'group_joins.ndjson',
   profile: 'profile.ndjson',
 };
+
+/**
+ * 递归寻找所有包含 canonical NDJSON 文件的目录。
+ * 若 root 本身就是 canonical 目录，则直接返回 [root]；
+ * 否则递归探测子目录（排除 .git、node_modules 等噪音）。
+ * @param {string} root
+ * @returns {string[]}
+ */
+export function findCanonicalDirs(root) {
+  if (!existsSync(root)) return [];
+
+  const isDirectCanonical = (dir) => {
+    return Object.values(FILES).some((file) => existsSync(join(dir, file)));
+  };
+
+  if (isDirectCanonical(root)) return [root];
+
+  const results = [];
+  function walk(dir) {
+    let entries;
+    try {
+      entries = readdirSync(dir, { withFileTypes: true });
+    } catch {
+      return;
+    }
+    for (const e of entries) {
+      if (e.isDirectory() && !e.name.startsWith('.') && e.name !== 'node_modules') {
+        const sub = join(dir, e.name);
+        if (isDirectCanonical(sub)) {
+          results.push(sub);
+        } else {
+          walk(sub);
+        }
+      }
+    }
+  }
+
+  walk(root);
+  return results.sort();
+}
 
 /**
  * 读一个 ndjson 文件。
@@ -74,16 +114,30 @@ function readNdjson(path) {
 /**
  * 读整个 canonical 目录。
  * @param {string} dir
+ * @param {{account?: string, allAccounts?: boolean, ignoreMultipleAccounts?: boolean}} [opts]
  * @returns {{marks: object[], subjects: object[], longform: object[], doulists: object[],
  *            broadcasts: object[], subjectOf: (mark: object) => object,
  *            multiRevisionMarks: number, account: {user_id?: string, username?: string}|null}}
  */
-export function loadCanonical(dir) {
-  const out = /** @type {any} */ ({});
+export function loadCanonical(dir, opts = {}) {
+  let out = /** @type {any} */ ({});
   for (const [key, name] of Object.entries(FILES)) out[key] = readNdjson(join(dir, name));
 
   if (Object.values(out).every(rows => rows.length === 0)) {
     throw new Error(`${dir} 看着不像 canonical 目录（所有已知 NDJSON 都没有记录）`);
+  }
+
+  const accounts = accountsInCanonical(out);
+  const uids = [...accounts.keys()].filter((k) => k && k !== 'unknown');
+
+  if (opts.account) {
+    const target = String(opts.account);
+    if (!uids.includes(target)) {
+      throw new Error(`指定的账号 ${target} 在 canonical 数据中不存在。已发现账号：${uids.length ? uids.join('、') : '（无已知账号）'}`);
+    }
+    out = filterCanonicalByAccount(out, target);
+  } else if (uids.length > 1 && !opts.allAccounts && !opts.ignoreMultipleAccounts) {
+    throw new Error(`输入的 canonical 目录中包含多个账号的数据（${uids.sort().join('、')}）。\n  直接导出可能导致第三方平台（NeoDB/Letterboxd/Goodreads）数据交叉污染。\n  请使用 --account <uid> 指定账号，或使用 --all-accounts 批量导出。`);
   }
 
   // **这几行是纯计算，所以不在这里。** 读 OPFS 的那个宿主
