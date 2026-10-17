@@ -45,6 +45,7 @@ const FILES = {
   albums: 'albums.ndjson',
   group_topics: 'group_topics.ndjson',
   group_joins: 'group_joins.ndjson',
+  profile: 'profile.ndjson',
 };
 
 /**
@@ -81,8 +82,8 @@ export function loadCanonical(dir) {
   const out = /** @type {any} */ ({});
   for (const [key, name] of Object.entries(FILES)) out[key] = readNdjson(join(dir, name));
 
-  if (out.marks.length === 0 && out.subjects.length === 0) {
-    throw new Error(`${dir} 看着不像 canonical 目录（marks.ndjson / subjects.ndjson 都没有）`);
+  if (Object.values(out).every(rows => rows.length === 0)) {
+    throw new Error(`${dir} 看着不像 canonical 目录（所有已知 NDJSON 都没有记录）`);
   }
 
   // **这几行是纯计算，所以不在这里。** 读 OPFS 的那个宿主

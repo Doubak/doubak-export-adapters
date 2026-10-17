@@ -76,3 +76,17 @@ test('存在相册与小组 NDJSON 时正常读入', () => {
   assert.equal(data.group_joins.length, 1);
   assert.equal(data.group_joins[0].group_id, 'g1');
 });
+
+test('optional profile loads without inventing ratings, and old inputs remain usable', () => {
+  const old = loadCanonical(FIXTURE);
+  assert.deepEqual(old.profile, []);
+  const dir = mkdtempSync(join(tmpdir(), 'doubak-profile-only-'));
+  const profile = { account: { user_id: '123', nickname: 'Owner' }, revisions: [] };
+  writeFileSync(join(dir, 'profile.ndjson'), JSON.stringify(profile)+'\n');
+  const data = loadCanonical(dir);
+  assert.deepEqual(data.profile, [profile]);
+  assert.deepEqual(data.marks, []);
+  assert.deepEqual(data.subjects, []);
+  assert.equal(data.account.user_id, '123');
+  assert.equal(data.multiRevisionMarks, 0);
+});
