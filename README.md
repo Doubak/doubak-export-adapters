@@ -7,7 +7,7 @@
 豆备（Doubak）的对外数据导出适配器。负责将 [解析器（doubak-data-parser）](https://github.com/Doubak/doubak-data-parser) 产出的标准 **canonical** 数据转换为面向 **NeoDB、Letterboxd 与 Goodreads** 的导入文件。
 
 ```sh
-node bin/export.js <canonical 目录> [输出目录] [--target=…] [--sample=N] [--no-shelf-history]
+node bin/export.js <canonical 目录> [输出目录] [--account=<uid>] [--all-accounts] [--target=…] [--sample=N] [--no-shelf-history]
 #              [--visibility=0|1|2] [--notes-visibility=0|1|2] [--unknown-visibility=0|1|2]
 node tools/check-export.mjs <canonical 目录> <导出目录>       # 上传前离线自查
 node tools/check-roundtrip.mjs <导出目录> <NeoDB 导出的 zip>  # 导入后与服务端导出数据的比对核验
@@ -37,6 +37,13 @@ node bin/export.js ~/downloads/canonical ~/downloads/export
 ```
 
 执行后产出目录中除了各目标平台的文件外，还会附带一份 `怎么导入.md`，详细列出本次导出的具体条目统计与各平台的实际导入步骤。完整的首次导入检查流程另见 [`docs/manual-testing.md`](docs/manual-testing.md)。建议初次使用时先通过 `--sample=20` 抽取样本并在目标平台小范围验证，确认无误后再执行全量导入。
+
+### 多账号防线与子目录自动识别
+
+- **子目录自动定位**：输入的 `<canonical 目录>` 可以直接指向 canonical 根目录，也可以指向包含多个 canonical 存档的上层父目录，导出器会自动向下探测。
+- **Fail-Fast 防污染铁律**：如果 Canonical 数据中检测到混杂了多个不同账号的记录且未指定导出目标，导出器会立即报错中断（退出码 1），杜绝将两个不同账号的历史合并导出至同一份文件、进而污染第三方平台的可能。
+- **单账号隔离（`--account <uid>`）**：只筛选并导出指定 UID 的标记、动态、长文与豆列。
+- **批量自动分治（`--all-accounts`）**：自动按账号分流，分别导出到 `<输出目录>/<uid>/` 下各自独立的导入包中。
 
 ## 三个平台不是一回事
 
